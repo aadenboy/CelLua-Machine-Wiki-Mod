@@ -6612,6 +6612,17 @@ function MenuRect(x,y,w,h,inclr,outclr)
 	love.graphics.rectangle("line",x,y,w,h,5,5)
 end
 
+local function recursivelyDelete(item) -- modified from https://love2d.org/wiki/love.filesystem.remove
+	if love.filesystem.getInfo(item, "directory") then
+		for _,v in ipairs(love.filesystem.getDirectoryItems(item)) do
+			recursivelyDelete(item.."/"..v)
+			love.filesystem.remove(item.."/"..v)
+		end
+	elseif love.filesystem.getInfo(item) then
+		love.filesystem.remove(item)
+	end
+end
+
 function CreateMenu()
 	bactive = function() return inmenu and not winscreen and not mainmenu and not wikimenu end
 	optionbactive = function() return (inmenu and not winscreen and not mainmenu or mainmenu == "options") and not wikimenu end
@@ -6767,6 +6778,7 @@ function CreateMenu()
 		cam.tarzoom = cam.zoom
 		TogglePause(false)
 		Play("unlock")
+		recursivelyDelete("recording")
 		love.filesystem.createDirectory("recording")
 		-- ::rth:: --
 	end,false,mbleandnopuz,"topleft",0)
@@ -17776,46 +17788,10 @@ end
 mx,my = 0,0
 function love.update(dt)
 	if recording then
-		local scene = recorddata.scene
-		local anim = recorddata.animation
-		dt = 1/anim.fps
+		dt = 1/recorddata.animation.fps
 		recorddata.timer = recorddata.timer + dt
 		winxm = 0
 		winym = 0
-		for i=1, #anim.ticks, 2 do
-			local value = anim.ticks[i]
-			local transition = anim.ticks[i+1]
-			if recorddata.timer >= recorddata.next and math.ceil(i/2) == recorddata.current then
-				recorddata.current = anim.ticks[i+2]
-				local camvalue = anim.camera and tostring(anim.camera[i+2])
-				local length = 0
-				if transition == "->" or (transition or ""):match("^%-%d*%.?%d+>$") then
-					local number = tonumber(transition:match("^%-(%d*%.?%d+)>$"))
-					delay = number or anim.defaultspeed
-					tpu = 1
-					length = (recorddata.current - value) * delay
-				elseif transition == ">>" or (transition or ""):match("^>%d*%.?%d+>$") then
-					local number = tonumber(transition:match("^>(%d*%.?%d+)>$"))
-					delay = number or anim.defaultspeed
-					tpu = recorddata.current - value
-					length = delay
-				else
-					delay = 0.2
-					tpu = 1
-					LoadWorld(scene.level)
-					recording = false
-					love.resize()
-					break
-				end
-				recorddata.next = recorddata.timer + length
-				if camvalue and (camvalue:match("^[%+%-]?i$") or camvalue:match("^[%+%-]?%d*%.?%d+i?$") or camvalue:match("^[%+%-]?%d*%.?%d+[%+%-]%d*%.?%d*i$")) then
-					local x, y = camvalue:match("^([%+%-]?%d*%.?%d+)([%+%-]%d*%.?%d*)i$")
-					x = x or camvalue:match("^([%+%-]?%d*%.?%d+)$")
-					y = y or camvalue:match("^([%+%-]?%d*%.?%d+)i$") or camvalue:match("^([%+%-]?)i$").."1"
-					anim.curip = ip.MoveObj(cam, (tonumber(x) or 0) * scene.cellsize, (tonumber(y) or 0) * scene.cellsize, length, "linear")
-				end
-			end
-		end
 	end
 	delta = dt
 	local start = love.timer.getTime()
@@ -18027,11 +18003,57 @@ function love.update(dt)
 		mx,my = love.mouse.getX(),love.mouse.getY()
 	end
 	if not paused and not mainmenu then
+		local scene = recorddata.scene
+		local anim = recorddata.animation
 		dtime = dtime + dt
+		if recording and anim.fromcam and anim.tocam then
+			local lerp = (dtime / delay / anim.lerptotal) + (tickcount - anim.lerpstart) / anim.lerptotal
+			cam.x = anim.fromcam.x + anim.tocam.x * lerp
+			cam.y = anim.fromcam.y + anim.tocam.y * lerp
+		end
 		if dtime > (level and .2 or delay) then
+			if recording then
+				for i=1, #anim.ticks, 2 do
+					local value = anim.ticks[i]
+					local transition = anim.ticks[i+1]
+					if value == tickcount then
+						local camvalue = anim.camera and tostring(anim.camera[i+2])
+						local length = 0
+						if transition == "->" or (transition or ""):match("^%-%d*%.?%d+>$") then
+							local number = tonumber(transition:match("^%-(%d*%.?%d+)>$"))
+							delay = number or anim.defaultspeed
+							tpu = 1
+							anim.lerptotal = anim.ticks[i+2] - value
+						elseif transition == ">>" or (transition or ""):match("^>%d*%.?%d+>$") then
+							local number = tonumber(transition:match("^>(%d*%.?%d+)>$"))
+							delay = number or anim.defaultspeed
+							tpu = anim.ticks[i+2] - value
+							anim.lerptotal = 1
+						else
+							delay = 0.2
+							tpu = 1
+							LoadWorld(scene.level)
+							recording = false
+							love.resize()
+							goto notick
+						end
+						anim.lerpstart = value
+						recorddata.next = recorddata.timer + length
+						if camvalue and (camvalue:match("^[%+%-]?i$") or camvalue:match("^[%+%-]?%d*%.?%d+i?$") or camvalue:match("^[%+%-]?%d*%.?%d+[%+%-]%d*%.?%d*i$")) then
+							local x, y = camvalue:match("^([%+%-]?%d*%.?%d+)([%+%-]%d*%.?%d*)i$")
+							x = x or camvalue:match("^([%+%-]?%d*%.?%d+)$")
+							y = y or camvalue:match("^([%+%-]?%d*%.?%d+)i$") or camvalue:match("^([%+%-]?)i$")
+							if y == "+" or y == "-" then y = y.."1" end
+							anim.fromcam = {x = cam.x, y = cam.y}
+							anim.tocam = {x = (tonumber(x) or 0) * scene.cellsize, y = (tonumber(y) or 0) * scene.cellsize}
+						end
+					end
+				end
+			end
 			for i=1,(level and 1 or tpu) do
 				DoTick(i==1)
 			end
+			::notick::
 		end
 	end
 	freezecam = freezecam and not paused
@@ -18990,6 +19012,7 @@ function DrawMainMenu()
 			love.graphics.rectangle("line", 500, 100, recorddata.canvas:getWidth(), recorddata.canvas:getHeight())
 			love.graphics.draw(recorddata.canvas, 500, 100)
 			love.graphics.print(quanta.dump(recorddata))
+			love.graphics.print(tickcount, 500, 0)
 			recorddata.canvas:newImageData():encode("png", "recording/"..recorddata.frame..".png")
 			recorddata.frame = recorddata.frame + 1
 		end

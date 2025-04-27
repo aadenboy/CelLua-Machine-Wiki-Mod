@@ -1,11 +1,11 @@
 [board]
-  {level} ::K3\::;7;8;1;eNozMEAHGqX5SBQKCwMAAKCEDRU=;::
-  {camera} 1 1
-  {cellsize} 20
-  {capture} 7 7
+  {level} ::K3\::;d;d;1;eNozMCALaJTm4xPAkKYWAADdqyJF;::
+  {camera} 1 3
+  {cellsize} 40
+  {capture} 9 9
 
 [animation]
   {defaultspeed} 0.2
   {fps} 30
-  {ticks}  0 -> 2
-  {camera} 0 -> i
+  {ticks}  0 -> 27
+  {camera} 0 -> 1-i
