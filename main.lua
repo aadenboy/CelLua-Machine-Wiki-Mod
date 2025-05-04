@@ -17804,6 +17804,60 @@ function love.update(dt)
 	end
 	postloading = true
 	ip.Update(dt)
+	if not paused and not mainmenu then
+		local scene = recorddata.scene
+		local anim = recorddata.animation
+		dtime = dtime + dt
+		if recording and anim.fromcam and anim.tocam then
+			local lerp = (dtime / delay / anim.lerptotal) + (tickcount - anim.lerpstart) / anim.lerptotal
+			cam.x = anim.fromcam.x + anim.tocam.x * lerp
+			cam.y = anim.fromcam.y + anim.tocam.y * lerp
+		end
+		if dtime > (level and .2 or delay) then
+			if recording then
+				for i=1, #anim.ticks, 2 do
+					local value = anim.ticks[i]
+					local transition = anim.ticks[i+1]
+					if value == tickcount then
+						local camvalue = anim.camera and tostring(anim.camera[i+2])
+						local length = 0
+						if transition == "->" or (transition or ""):match("^%-%d*%.?%d+>$") then
+							local number = tonumber(transition:match("^%-(%d*%.?%d+)>$"))
+							delay = number or anim.defaultspeed
+							tpu = 1
+							anim.lerptotal = anim.ticks[i+2] - value
+						elseif transition == ">>" or (transition or ""):match("^>%d*%.?%d+>$") then
+							local number = tonumber(transition:match("^>(%d*%.?%d+)>$"))
+							delay = number or anim.defaultspeed
+							tpu = anim.ticks[i+2] - value
+							anim.lerptotal = 1
+						else
+							delay = 0.2
+							tpu = 1
+							LoadWorld(scene.level)
+							recording = false
+							love.resize()
+							goto notick
+						end
+						anim.lerpstart = value + 1
+						recorddata.next = recorddata.timer + length
+						if camvalue and (camvalue:match("^[%+%-]?i$") or camvalue:match("^[%+%-]?%d*%.?%d+i?$") or camvalue:match("^[%+%-]?%d*%.?%d+[%+%-]%d*%.?%d*i$")) then
+							local x, y = camvalue:match("^([%+%-]?%d*%.?%d+)([%+%-]%d*%.?%d*)i$")
+							x = x or camvalue:match("^([%+%-]?%d*%.?%d+)$")
+							y = y or camvalue:match("^([%+%-]?%d*%.?%d+)i$") or camvalue:match("^([%+%-]?)i$")
+							if y == "+" or y == "-" then y = y.."1" end
+							anim.fromcam = {x = cam.x, y = cam.y}
+							anim.tocam = {x = (tonumber(x) or 0) * scene.cellsize, y = (tonumber(y) or 0) * scene.cellsize}
+						end
+					end
+				end
+			end
+			for i=1,(level and 1 or tpu) do
+				DoTick(i==1)
+			end
+			::notick::
+		end
+	end
 	hoveredbutton = nil
 	for i=1,#buttonorder do
 		local b = buttons[buttonorder[i]]
@@ -18001,60 +18055,6 @@ function love.update(dt)
 		mx,my = x,y
 	else
 		mx,my = love.mouse.getX(),love.mouse.getY()
-	end
-	if not paused and not mainmenu then
-		local scene = recorddata.scene
-		local anim = recorddata.animation
-		dtime = dtime + dt
-		if recording and anim.fromcam and anim.tocam then
-			local lerp = (dtime / delay / anim.lerptotal) + (tickcount - anim.lerpstart) / anim.lerptotal
-			cam.x = anim.fromcam.x + anim.tocam.x * lerp
-			cam.y = anim.fromcam.y + anim.tocam.y * lerp
-		end
-		if dtime > (level and .2 or delay) then
-			if recording then
-				for i=1, #anim.ticks, 2 do
-					local value = anim.ticks[i]
-					local transition = anim.ticks[i+1]
-					if value == tickcount then
-						local camvalue = anim.camera and tostring(anim.camera[i+2])
-						local length = 0
-						if transition == "->" or (transition or ""):match("^%-%d*%.?%d+>$") then
-							local number = tonumber(transition:match("^%-(%d*%.?%d+)>$"))
-							delay = number or anim.defaultspeed
-							tpu = 1
-							anim.lerptotal = anim.ticks[i+2] - value
-						elseif transition == ">>" or (transition or ""):match("^>%d*%.?%d+>$") then
-							local number = tonumber(transition:match("^>(%d*%.?%d+)>$"))
-							delay = number or anim.defaultspeed
-							tpu = anim.ticks[i+2] - value
-							anim.lerptotal = 1
-						else
-							delay = 0.2
-							tpu = 1
-							LoadWorld(scene.level)
-							recording = false
-							love.resize()
-							goto notick
-						end
-						anim.lerpstart = value
-						recorddata.next = recorddata.timer + length
-						if camvalue and (camvalue:match("^[%+%-]?i$") or camvalue:match("^[%+%-]?%d*%.?%d+i?$") or camvalue:match("^[%+%-]?%d*%.?%d+[%+%-]%d*%.?%d*i$")) then
-							local x, y = camvalue:match("^([%+%-]?%d*%.?%d+)([%+%-]%d*%.?%d*)i$")
-							x = x or camvalue:match("^([%+%-]?%d*%.?%d+)$")
-							y = y or camvalue:match("^([%+%-]?%d*%.?%d+)i$") or camvalue:match("^([%+%-]?)i$")
-							if y == "+" or y == "-" then y = y.."1" end
-							anim.fromcam = {x = cam.x, y = cam.y}
-							anim.tocam = {x = (tonumber(x) or 0) * scene.cellsize, y = (tonumber(y) or 0) * scene.cellsize}
-						end
-					end
-				end
-			end
-			for i=1,(level and 1 or tpu) do
-				DoTick(i==1)
-			end
-			::notick::
-		end
 	end
 	freezecam = freezecam and not paused
 	if not freezecam and not typing and not mainmenu and not recording then
@@ -19211,7 +19211,7 @@ function DrawButtonInfo()
 	end
 end
 
-versiontxt = [[Version #rw1.0.0 #x(v2.2.0)
+versiontxt = [[Version #r2.2.0#55aaff_ff00ffw1.0.2
 #xCelLua Machine Wiki Mod created by #ff0000_00ff00aadenboy
 #xOriginal CelLua Machine created by#00ff00_80ff80 KyYay
 #xOriginal Cell Machine by #40a0ff-80c0ffSam Hogan]]
