@@ -19211,7 +19211,7 @@ function DrawButtonInfo()
 	end
 end
 
-versiontxt = [[Version #r2.2.0#55aaff_ff00ffw1.0.2
+versiontxt = [[Version #r2.0.2#55aaff_ff00ffw1.0.2
 #xCelLua Machine Wiki Mod created by #ff0000_00ff00aadenboy
 #xOriginal CelLua Machine created by#00ff00_80ff80 KyYay
 #xOriginal Cell Machine by #40a0ff-80c0ffSam Hogan]]
