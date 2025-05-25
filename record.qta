@@ -1,11 +1,12 @@
 [board]
-  {level} ::K3\::;O;f;1;eNozMCAS+BoMHhCukRSPC4UajILBBJIGt/MAcq+TvQ==;::
-  {camera} 30 2
-  {cellsize} 20
-  {capture} 15 5
+  {level} ::K3\::;a;5;1;eNozMMAGLNKBwAA7AAAGGwpF;::
+  {camera} 1 1
+  {cellsize} 40
+  {capture} 9 5
 
 [animation]
-  {defaultspeed} 0.2
+  {defaultspeed} 0.5
+  {mode} forces
   {fps} 30
-  {ticks}  0 -> 8 -> 15
-  {camera} 0 -> 0 -> -6
+  {ticks}  0 -> 6 -> 7 -> 8
+  {camera} 0 -> 0 -> 1 -> 0

@@ -55,6 +55,51 @@ collectedkeys = {}
 graphicsmax = love.graphics.getSystemLimits().texturesize
 absolutedraw, rendercelltext = false, true
 cellcounts = {}
+subticking = 0
+forcespread = {}
+overallcount = 0
+--[[
+	subticking modes
+	0 - no subtucking
+	1 - subticks
+	2 - subsubticks (every cell individually)
+	3 - force propagation
+]]
+
+function wrap(func) -- because coroutine.wrap doesn't give status info
+    local co = coroutine.create(func)
+    local function wrapped(...)
+        local ok, result = coroutine.resume(co, ...)
+        if not ok then
+            error(result, 2)
+        end
+        return result
+    end
+    return wrapped, co
+end
+function yield(case, ret)
+	if case and coroutine.running() then
+		coroutine.yield(ret)
+	end
+end
+
+function logforce(cx,cy,cdir,vars,oldcell,doyield)
+	if subticking == 3 then
+		table.insert(forcespread, {
+			x = cx, y = cy,
+			lx = vars.lastx,
+			ly = vars.lasty,
+			dir = cdir, ldir = vars.lastdir,
+			rot = oldcell.rot,
+			forcetype = vars.forcetype,
+			cell = oldcell,
+			drawcell = table.copy(oldcell),
+			revealtick = overallcount + 2 -- edge case with pushing for some unknown reason
+		})
+		oldcell.vars.forceinterp = #forcespread
+		yield(doyield == nil or doyield, true)
+	end
+end
 
 recording = false
 recorddata = {}
@@ -1910,7 +1955,11 @@ function MakeTextures()
 	NewTex("popups","popups")
 	NewTex("debug","debug")
 	NewTex("fancy","fancy")
-	NewTex("subtick","subtick")
+	NewTex("subtick0","subtick0")
+	NewTex("subtick1","subtick1")
+	NewTex("subtick2","subtick2")
+	NewTex("subtick3","subtick3")
+	NewTex("subtick4","subtick4")
 	NewTex("delete","delete")
 	NewTex("checkoff","checkoff")
 	NewTex("checkon","checkon")
@@ -1969,6 +2018,19 @@ function MakeTextures()
 	NewTex("rendertext","rendertext")
 	NewTex("countcells","countcells")
 	NewTex("record","recordvideo")
+	NewTex("forces/push","forcepush")
+	NewTex("forces/nudge","forcenudge")
+	NewTex("forces/pull","forcepull")
+	NewTex("forces/grab","forcegrab")
+	NewTex("forces/grabL","forcegrabL")
+	NewTex("forces/grabR","forcegrabR")
+	NewTex("forces/slice","forceslice")
+	NewTex("forces/sliceL","forcesliceL")
+	NewTex("forces/sliceR","forcesliceR")
+	NewTex("forces/tunnel","forcetunnel")
+	NewTex("forces/dig","forcedig")
+	NewTex("forces/staple","forcestaple")
+	NewTex("forces/swap","forceswap")
 end
 
 function MakePackBtn(i,pack)
@@ -5004,7 +5066,11 @@ function RefreshWorld()
 	width = newwidth+2
 	height = newheight+2
 	subtick = 0
+	subtickco = nil
+	currentsst = nil
+	forcespread = {}
 	tickcount = 0
+	overallcount = 0
 	ResetPortals()
 end
 
@@ -6694,7 +6760,7 @@ function CreateMenu()
 	NewButton(0,5,300,10,"pix","uiscaleslider",nil,nil,function() newuiscale = math.round((love.mouse.getX()/uiscale-centerx/uiscale+250)/10)*.05 end,true,optionbactive,"center",2000,nil,{.25,.25,.25,1},{.25,.25,.25,1},{.25,.25,.25,1})
 	local b = NewButton(0,25,20,20,"debug","debugbtn","Debug mode",nil,function(b) settings.debug = not dodebug; dodebug = settings.debug; SetEnabledColors(b,dodebug,true) end,false,optionbactive,"center",2000,nil,{.5,.5,.5,1},{.75,.75,.75,1},{.25,.25,.25,1})
 	SetEnabledColors(b,dodebug,true)
-	NewButton(-25,25,20,20,"subtick","subtickbtn","Subticking",nil,function(b) subticking = not subticking SetEnabledColors(b,subticking,true) end,false,optionbactive,"center",2000,nil,{.5,.5,.5,1},{.75,.75,.75,1},{.25,.25,.25,1})
+	NewButton(-25,25,20,20,function(b) return "subtick"..subticking end,"subtickbtn","Subticking",function(b) return "Controls how ticks are displayed.\nCurrently: "..({[0] = "Full ticks", "Subticks", "Subsubticks (individual cells)", "Force propagation"})[subticking] end,function(b) subticking = (subticking + 1) % 4 SetEnabledColors(b,subticking > 0,true) end,false,optionbactive,"center",2000,nil,{.5,.5,.5,1},{.75,.75,.75,1},{.25,.25,.25,1})
 	local b = NewButton(25,25,20,20,"fancy","fancybtn","Fancy Graphics",nil,function(b) settings.fancy = not fancy; fancy = settings.fancy; SetEnabledColors(b,fancy,true) end,false,optionbactive,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
 	SetEnabledColors(b,fancy,true)
 	local b = NewButton(12.5,25,20,20,"fancy","fancybtnwmexport","Fancy Graphics","Toggle whether or not to export as if #rFancy Graphics#x is enabled",function(b) settings.fancywm = not fancywm; fancywm = settings.fancywm; SetEnabledColors(b,fancywm,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
@@ -6760,6 +6826,7 @@ function CreateMenu()
 		or (type(sceneanimation.camera) ~= "table" and type(sceneanimation.camera) ~= "nil")
 		or (type(sceneanimation.camera) == "table" and #sceneanimation.camera ~= #sceneanimation.ticks) then Play("destroy") return end
 		if not LoadWorld(sceneboard.level) then return end
+		RefreshWorld()
 		recording = true
 		recorddata = {
 			scene = sceneboard,
@@ -6776,6 +6843,15 @@ function CreateMenu()
 		cam.tarx = cam.x * sceneboard.cellsize
 		cam.tary = cam.y * sceneboard.cellsize
 		cam.tarzoom = cam.zoom
+		subticking = ({
+			ticks = 0,
+			subticks = 1,
+			subsubticks = 2,
+			cells = 2,
+			forces = 3,
+			subsubsubticks = 3,
+			propagation = 3
+		})[recorddata.animation.mode or "ticks"] or 0
 		TogglePause(false)
 		Play("unlock")
 		recursivelyDelete("recording")
@@ -8482,7 +8558,7 @@ function DoWirelessTransmitter(cell,x,y,func,neighborfunc,nval,queuekey,dirindex
 		Queue(queuekey, function() RunOn(function(c) return c.id == 583 and c.vars[1] == cell.vars[1] end,
 		function(x,y,c) c.supdatekey = supdatekey; func(x,y,unpack(vars)) end,
 		"rightup",
-		583) end)
+		583)() end)
 		Queue(queuekey, function() updatekey = updatekey+1 end)
 	end
 	local neighbors = neighborfunc(x,y,nval)
@@ -11577,6 +11653,9 @@ function NudgeCell(x,y,dir,vars)
 		end
 		vars.forcetype = "nudge"
 		vars.lastcell = vars.skipfirst and getempty() or cell
+		vars.lastx,vars.lasty = StepBack(x,y,dir)
+		vars.lastdir = dir
+		logforce(x,y,dir,vars,oldcell)
 		vars.lastx,vars.lasty,vars.lastdir = x,y,dir
 		local destroy = IsDestroyer(checkedcell,cdir,cx,cy,vars)
 		if vars.forcedestroy or destroy and (x ~= cx or y ~= cy) then
@@ -11610,6 +11689,7 @@ function NudgeCellTo(lastcell,x,y,dir,vars)
 	vars.forcetype = "nudge"
 	vars.lastcell = lastcell
 	vars.lastx,vars.lasty,vars.lastdir = x,y,dir
+	logforce(x,y,dir,vars,checkedcell)
 	local destroy = IsDestroyer(checkedcell,dir,x,y,vars)
 	if vars.forcedestroy or destroy then
 		vars.active = destroy
@@ -11660,6 +11740,7 @@ function PushCell(x,y,dir,vars)
 		cx,cy,cdir = NextCell(cx,cy,cdir,vars)
 		if not cx or vars.repeats > vars.maximum then force = 0 break end
 		local oldcell = GetCell(cx,cy,vars.layer)
+		logforce(cx,cy,cdir,vars,oldcell)
 		vars.destroying = vars.forcedestroy or not vars.skipfirst and IsDestroyer(oldcell,cdir,cx,cy,vars)
 		local oldforce = force
 		force = HandlePush(force,oldcell,cdir,cx,cy,vars)
@@ -11743,6 +11824,9 @@ function LGrabCell(x,y,dir,vars)
 		if not cx or vars.repeats > vars.maximum then vars.ended = true break end
 		cdir = (cdir+1)%4
 		local oldcell = GetCell(cx,cy,vars.layer)
+		vars.forcetype = "grabL"
+		logforce(cx,cy,cdir,vars,oldcell)
+		vars.forcetype = "grab"
 		local transparent 
 		local bluh
 		if not vars.skipfirst or vars.repeats > 1 then
@@ -11816,6 +11900,9 @@ function RGrabCell(x,y,dir,vars)
 		if not cx or vars.repeats > vars.maximum then vars.ended = true break end
 		cdir = (cdir-1)%4
 		local oldcell = GetCell(cx,cy,vars.layer)
+		vars.forcetype = "grabR"
+		logforce(cx,cy,cdir,vars,oldcell)
+		vars.forcetype = "grab"
 		local transparent 
 		if not vars.skipfirst or vars.repeats > 1 then
 			force = HandleGrab(force,oldcell,cdir,cx,cy,vars)
@@ -11864,6 +11951,11 @@ function GrabCell(x,y,dir,vars)
 	local vars2 = table.copy(vars)
 	vars2.failonfirst = true
 	local oldcell = GetCell(x,y,vars.layer)
+	local vars3 = {}
+	vars3.lastx,vars3.lasty = StepBack(x,y,dir)
+	vars3.lastdir = dir
+	vars3.forcetype = "grab"
+	logforce(x,y,dir,vars3,oldcell)
 	local success,force = LGrabCell(x,y,dir,vars2)
 	if success and GetCell(x,y,vars.layer) ~= oldcell then
 		vars.force = force
@@ -11932,6 +12024,7 @@ function PullCell(x,y,dir,vars)
 		if not cx or vars.repeats > vars.maximum then vars.ended = true break end
 		cdir = (cdir+2)%4
 		local oldcell = GetCell(cx,cy,vars.layer)
+		logforce(cx,cy,cdir,vars,oldcell)
 		local transparent
 		if not vars.skipfirst or vars.repeats > 1 then
 			force = HandlePull(force,oldcell,cdir,cx,cy,vars)
@@ -11984,6 +12077,17 @@ function SwapCells(x1,y1,dir1,x2,y2,dir2,vars)
 	cell1.testvar = "A"
 	cell2.testvar = "B"
 	GetCell(x2,y2,vars.layer).testvar = "B"
+	local mx, my = (x1+x2)/2, (y1+y2)/2
+	local vars2 = {}
+	vars2.lastx,vars2.lasty = mx,my
+	vars2.lastdir = dir1
+	vars2.forcetype = "swap"
+	logforce(x1,y1,dir1,vars2,cell1,false)
+	local vars3 = {}
+	vars3.lastx,vars3.lasty = mx,my
+	vars3.lastdir = dir2
+	vars3.forcetype = "swap"
+	logforce(x2,y2,dir2,vars3,cell2)
 	if (not unb1 or dest1) or (not unb2 or dest2) then
 		if dest1 and not unb2 and not non2 then
 			SetCell(x2,y2,getempty())
@@ -12013,76 +12117,103 @@ function SwapCells(x1,y1,dir1,x2,y2,dir2,vars)
 	return false
 end
 
-function RunOn(runwhen,torun,direction,chunktype,layer,startx,endx,starty,endy,hasborder)	
-	layer = layer or 0
-	if not chunks[layer].all[chunktype] and not hasborder then return false end
-	local right,down,xfirst
-	right = direction == "rightdown" or direction == "downright" or direction == "rightup" or direction == "upright"
-	down = direction == "rightdown" or direction == "downright" or direction == "leftdown" or direction == "downleft"
-	xfirst = direction == "rightdown" or direction == "leftdown" or direction == "rightup" or direction == "leftup"
-	local didsomething = false
-	if xfirst then
-		endx = endx or right and width-2 or 1
-		endy = endy or down and height-2 or 1
-		local cy = starty or down and 1 or height-2
-		while down and cy <= endy or not down and cy >= endy do
-			local cx = startx or right and 1 or width-2
-			local yinvsize = 1/2^maxchunksize
-			while right and cx <= endx or not right and cx >= endx do
-				local cell = layers[layer][cy][cx]
-				if runwhen(cell) then
-					torun(cx,cy,cell)
-					updatekey = updatekey + 1
-					didsomething = true
-					cx = cx + (right and 1 or -1)
-					yinvsize = 1
-				else
-					local invsize = GetChunk(cx,cy,layer,chunktype)
-					cx = right and math.floor(cx*invsize+1)/invsize or math.floor(cx*invsize)/invsize-1
-					yinvsize = math.max(yinvsize,invsize)
-					if hasborder then
-						cx = right and math.min(cx,width-1) or math.max(cx,0)
-					end
-				end
-			end
-			local oldcy = cy
-			cy = down and math.floor(cy*yinvsize+1)/yinvsize or math.floor(cy*yinvsize)/yinvsize-1
-			if hasborder and oldcy > 0 and oldcy < height-1 then
-				cy = down and math.min(cy,height-1) or math.max(cy,0)
-			end
-		end
-	else
-		endx = endx or right and width-2 or 1
-		endy = endy or down and height-2 or 1
-		local cx = startx or right and 1 or width-2
-		while right and cx <= endx or not right and cx >= endx do
+function RunOn(runwhen,torun,direction,chunktype,layer,startx,endx,starty,endy,hasborder,runafter)	
+	return wrap(function(doyield)
+		layer = layer or 0
+		if not chunks[layer].all[chunktype] and not hasborder then return false end
+		local right,down,xfirst
+		right = direction == "rightdown" or direction == "downright" or direction == "rightup" or direction == "upright"
+		down = direction == "rightdown" or direction == "downright" or direction == "leftdown" or direction == "downleft"
+		xfirst = direction == "rightdown" or direction == "leftdown" or direction == "rightup" or direction == "leftup"
+		local didsomething = false
+		if xfirst then
+			endx = endx or right and width-2 or 1
+			endy = endy or down and height-2 or 1
 			local cy = starty or down and 1 or height-2
-			local xinvsize = 1/2^(maxchunksize+1)
 			while down and cy <= endy or not down and cy >= endy do
-				local cell = layers[layer][cy][cx]
-				if runwhen(cell) then
-					torun(cx,cy,cell)
-					updatekey = updatekey + 1
-					didsomething = true
-					cy = cy + (down and 1 or -1)
-					xinvsize = 1
-				else
-					local invsize = GetChunk(cx,cy,layer,chunktype)
-					cy = down and math.floor(cy*invsize+1)/invsize or math.floor(cy*invsize)/invsize-1
-					xinvsize = math.max(xinvsize,invsize)
-					if hasborder then
-						cy = down and math.min(cy,height-1) or math.max(cy,0)
+				local didsomethinglocal = false
+				local cx = startx or right and 1 or width-2
+				local yinvsize = 1/2^maxchunksize
+				while right and cx <= endx or not right and cx >= endx do
+					local cell = layers[layer][cy][cx]
+					if runwhen(cell) then
+						torun(cx,cy,cell)
+						updatekey = updatekey + 1
+						didsomething = true
+						didsomethinglocal = true
+						cx = cx + (right and 1 or -1)
+						yinvsize = 1
+						if doyield then
+							for i,force in ipairs(forcespread) do
+								local cell = force.cell
+								cell.vars.forceinterp = nil
+								cell.lastvars = {force.x,force.y,cell.rot-force.rot}
+							end
+							forcespread = {}
+							currentsst = cell
+							coroutine.yield(true)
+						end
+					else
+						local invsize = GetChunk(cx,cy,layer,chunktype)
+						cx = right and math.floor(cx*invsize+1)/invsize or math.floor(cx*invsize)/invsize-1
+						yinvsize = math.max(yinvsize,invsize)
+						if hasborder then
+							cx = right and math.min(cx,width-1) or math.max(cx,0)
+						end
 					end
 				end
+				local oldcy = cy
+				cy = down and math.floor(cy*yinvsize+1)/yinvsize or math.floor(cy*yinvsize)/yinvsize-1
+				if hasborder and oldcy > 0 and oldcy < height-1 then
+					cy = down and math.min(cy,height-1) or math.max(cy,0)
+				end
 			end
-			local oldcx = cx
-			cx = right and math.floor(cx*xinvsize+1)/xinvsize or math.floor(cx*xinvsize)/xinvsize-1
-			if hasborder and oldcx > 0 and oldcx < width-1 then
-				cx = right and math.min(cx,width-1) or math.max(cx,0)
+		else
+			endx = endx or right and width-2 or 1
+			endy = endy or down and height-2 or 1
+			local cx = startx or right and 1 or width-2
+			while right and cx <= endx or not right and cx >= endx do
+				local didsomethinglocal = false
+				local cy = starty or down and 1 or height-2
+				local xinvsize = 1/2^(maxchunksize+1)
+				while down and cy <= endy or not down and cy >= endy do
+					local cell = layers[layer][cy][cx]
+					if runwhen(cell) then
+						torun(cx,cy,cell)
+						updatekey = updatekey + 1
+						didsomething = true
+						didsomethinglocal = true
+						cy = cy + (down and 1 or -1)
+						xinvsize = 1
+						if doyield then
+							for i,force in ipairs(forcespread) do
+								local cell = force.cell
+								cell.vars.forceinterp = nil
+								cell.lastvars = {force.x,force.y,cell.rot-force.rot}
+							end
+							forcespread = {}
+							currentsst = cell
+							coroutine.yield(true)
+						end
+					else
+						local invsize = GetChunk(cx,cy,layer,chunktype)
+						cy = down and math.floor(cy*invsize+1)/invsize or math.floor(cy*invsize)/invsize-1
+						xinvsize = math.max(xinvsize,invsize)
+						if hasborder then
+							cy = down and math.min(cy,height-1) or math.max(cy,0)
+						end
+					end
+				end
+				local oldcx = cx
+				cx = right and math.floor(cx*xinvsize+1)/xinvsize or math.floor(cx*xinvsize)/xinvsize-1
+				if hasborder and oldcx > 0 and oldcx < width-1 then
+					cx = right and math.min(cx,width-1) or math.max(cx,0)
+				end
 			end
 		end
-	end
-	return didsomething
+		if runafter then runafter() end
+		return didsomething
+	end)
 end
 
 function DoCheater(x,y,cell)
@@ -15023,6 +15154,11 @@ function SliceCell(x,y,dir,vars)
 	local cell = GetCell(x,y)
 	vars = vars or {}
 	vars.force = vars.force or 1
+	local vars2 = {}
+	vars2.lastx,vars2.lasty = StepBack(x,y,dir)
+	vars2.lastdir = dir
+	vars2.forcetype = "slice"
+	logforce(x,y,dir,vars2,cell)
 	local nvars = {}
 	if not NudgeCell(x,y,dir,nvars) then
 		local cx,cy = StepForward(x,y,dir)
@@ -15043,6 +15179,11 @@ function StapleCell(x,y,dir,vars)
 	local cell = GetCell(x,y)
 	vars = vars or {}
 	vars.force = vars.force or 1
+	local vars2 = {}
+	vars2.lastx,vars2.lasty = StepBack(x,y,dir)
+	vars2.lastdir = dir
+	vars2.forcetype = "staple"
+	logforce(x,y,dir,vars2,cell)
 	local nvars = {}
 	if NudgeCell(x,y,dir,nvars) then
 		local cdir = (dir == 0 or dir == 2) and 1 or 2
@@ -15057,6 +15198,11 @@ end
 function StapleEmptyCell(x,y,dir,vars)
 	vars = vars or {}
 	vars.force = vars.force or 1
+	local vars2 = {}
+	vars2.lastx,vars2.lasty = StepBack(x,y,dir)
+	vars2.lastdir = dir
+	vars2.forcetype = "staple"
+	logforce(x,y,dir,vars2,getempty())
 	local cdir = (dir == 0 or dir == 2) and 1 or 2
 	local cx,cy = StepBackwards(x,y,cdir)
 	PullCell(cx,cy,cdir,table.copy(vars))
@@ -15067,6 +15213,11 @@ end
 
 function TunnelCell(x,y,dir,strong)
 	local cx,cy,cell = x,y,GetCell(x,y)
+	local vars = {}
+	vars.lastx,vars.lasty = StepBack(x,y,dir)
+	vars.lastdir = dir
+	vars.forcetype = strong and "dig" or "tunnel" -- two distinct forces
+	logforce(x,y,dir,vars,cell)
 	SetCell(x,y,getempty())
 	while true do
 		cx,cy = StepForward(cx,cy,dir)
@@ -15100,6 +15251,11 @@ function LSliceCell(x,y,dir,vars)
 	local cell = GetCell(x,y)
 	vars = vars or {}
 	vars.force = vars.force or 1
+	local vars2 = {}
+	vars2.lastx,vars2.lasty = StepBack(x,y,dir)
+	vars2.lastdir = dir
+	vars2.forcetype = "sliceL"
+	logforce(x,y,dir,vars2,cell)
 	local nvars = {}
 	if not NudgeCell(x,y,dir,nvars) then
 		local cx,cy = StepForward(x,y,dir)
@@ -15116,6 +15272,11 @@ function RSliceCell(x,y,dir,vars)
 	local cell = GetCell(x,y)
 	vars = vars or {}
 	vars.force = vars.force or 1
+	local vars2 = {}
+	vars2.lastx,vars2.lasty = StepBack(x,y,dir)
+	vars2.lastdir = dir
+	vars2.forcetype = "slice"
+	logforce(x,y,dir,vars2,cell)
 	local nvars = {}
 	if not NudgeCell(x,y,dir,nvars) then
 		local cx,cy = StepForward(x,y,dir)
@@ -17157,7 +17318,7 @@ function CheckEnemies()
 			elseif IsNeutral(c) then player = true end
 		end,
 		"rightup",
-		"tagged")
+		"tagged")()
 		local victory = {}
 		local failure = {}
 		RunOn(function(c) return ChunkId(c.id) == 908 end,
@@ -17173,7 +17334,7 @@ function CheckEnemies()
 			end
 		end,
 		"rightup",
-		908)
+		908)()
 		local forcewin,forcefail
 		for k,v in pairs(victory) do
 			if v then
@@ -17208,7 +17369,7 @@ function FocusCam()
 	RunOn(function(c) return not c.frozen and (ChunkId(c.id) == 239 or c.id == 552 and c.vars[26] == 1) end,
 	function(x,y,c) if playercam then table.insert(playerpos,{x+.5,y+.5}) cam.tarx,cam.tary = 0,0 end freezecam = true end,
 	held == 0 and "upleft" or held == 2 and "upright" or held == 3 and "rightdown" or "rightup",
-	239)
+	239)()
 	for i=1,#playerpos do
 		cam.tarx = cam.tarx+cam.tarzoom*playerpos[i][1]/#playerpos
 		cam.tary = cam.tary+cam.tarzoom*playerpos[i][2]/#playerpos 
@@ -17349,7 +17510,7 @@ subticks = {
 	function() return RunOn(function(c) return not c.updated and ChunkId(c.id) == 412 and c.rot == 2 end,								DoRecursor, "upright", 412) end,
 	function() return RunOn(function(c) return not c.updated and ChunkId(c.id) == 412 and c.rot == 3 end,								DoRecursor, "rightdown", 412) end,
 	function() return RunOn(function(c) return not c.updated and ChunkId(c.id) == 412 and c.rot == 1 end,								DoRecursor, "rightup", 412) end,
-	function() FreezeQueue("rotate",true) FreezeQueue("flip",true) local success = RunOn(function(c) return c.vars.perpetualrot and not c.prupdated end, DoPerpetualRotation, "rightup", "perpetualrotate") FreezeQueue("rotate",false) FreezeQueue("flip",false) return success; end,
+	function() FreezeQueue("rotate",true) FreezeQueue("flip",true) return RunOn(function(c) return c.vars.perpetualrot and not c.prupdated end, DoPerpetualRotation, "rightup", "perpetualrotate", nil,nil,nil,nil,nil,nil, function() FreezeQueue("rotate",false) FreezeQueue("flip",false) end) end,
 	function() return RunOn(function(c) return not c.updated and ChunkId(c.id) == 641 end,												DoSuperFlipper, "upright", 641) end,
 	function() return RunOn(function(c) return not c.updated and ChunkId(c.id) == 30 end,												DoFlipper, "upright", 30) end,
 	function() return RunOn(function(c) return not c.updated and ChunkId(c.id) == 442 end,												DoSuperRotator, "rightup", 442) end,
@@ -17476,7 +17637,7 @@ subticks = {
 	function() return RunOn(function(c) return not c.updated and ChunkId(c.id) == 1167 end,												DoChaser, "rightup", 1167) end,
 	function() return RunOn(function(c) return not c.updated and ChunkId(c.id) == 1157 end,												DoObserver, "rightup", 1157) end,
 	function() return RunOn(function(c) return not c.updated and ChunkId(c.id) == 1155 end,												DoIcicle, "rightup", 1155) end,
-	function() return DoInputPushable() end,
+	function() return wrap(function() return DoInputPushable() end) end,
 	function() return RunOn(function(c) return  not c.updated and ChunkId(c.id) == 1172 end,											DoFearfulEnemy, "rightup", 1172) end,
 	function() return RunOn(function(c) return  not c.updated and ChunkId(c.id) == 827 end,												DoAngryEnemy, "rightup", 827) end,
 	function() return RunOn(function(c) return c.vars.gravdir and c.vars.gravdir%4 == 0 and not c.gupdated end,							function(x,y,c) c.gupdated = true; PushCell(x,y,0,{force=1}) end, "upleft", "gravity") end,
@@ -17497,8 +17658,8 @@ subticks = {
 	function() return RunOn(function(c) return ChunkId(c.id) == 1187 end, 																DoCoil, "rightup", 1187) end,
 	function() return RunOn(function(c) return ChunkId(c.id) == 735 end,																CheckBlade, "rightup", 735) end,
 	function() return RunOn(function(c) return c.vars.compelled or c.vars.gooey or ChunkId(c.id) == "compel" and not c.updated end, 	CheckCompel, "rightup", "compel") end,
-	CheckEnemies,
-	FocusCam,
+	function() return wrap(function() return CheckEnemies() end) end,
+	function() return wrap(function() return FocusCam() end) end,
 }
 
 function AddSubtick(func,index)
@@ -17507,6 +17668,13 @@ function AddSubtick(func,index)
 end
 
 function ResetCells(first)
+	if first then
+		for i,force in ipairs(forcespread) do
+			force.lx = force.x
+			force.ly = force.y
+			force.ldir = force.dir
+		end
+	end
 	for z=0,depth-1 do
 		chunks[z].all.new = {}
 		RunOn(function(c) return c.id ~= 0 end,
@@ -17542,7 +17710,7 @@ function ResetCells(first)
 				c.firstx,c.firsty,c.firstrot = x,y,c.rot
 			end
 		end
-		,"rightup","all",z,0,width-1,height-1,0)
+		,"rightup","all",z,0,width-1,height-1,0)()
 	end
 	if subtick == 0 then
 		for z=0,depth-1 do
@@ -17582,22 +17750,52 @@ function DoTick(first)
 	if love.keyboard.isDown("a") or love.keyboard.isDown("left") then held = held or 2; heldhori = heldhori or 2 end
 	if love.keyboard.isDown("w") or love.keyboard.isDown("up") then held = held or 3; heldvert = heldvert or 3 end
 	if love.keyboard.isDown("s") or love.keyboard.isDown("down") then held = held or 1; heldvert = heldvert or 1 end
-	if subticking and not level then
-		if subtick == 0 then tickcount = tickcount + 1 end
-		ResetCells(first)
-		repeat
-			subtick = subtick%#subticks+1
-			print(subtick)
-		until subticks[subtick]() or subtick == #subticks
-		if subtick == #subticks then subtick = 0 end
-	else
+	if tickcount == 0 then overallcount = 0 end
+	if subticking == 0 or level then
+		subtickco = nil
+		currentsst = nil
+		forcespread = {}
 		subtick = 0
 		tickcount = tickcount + 1
 		ResetCells(first)
 		for i=subtick%#subticks+1,#subticks do
-			subticks[i]()
+			subticks[i]()()
 		end
+	elseif subticking == 1 then
+		subtickco = nil
+		currentsst = nil
+		forcespread = {}
+		if subtick == 0 then tickcount = tickcount + 1 end
+		ResetCells(first)
+		repeat
+			subtick = subtick%#subticks+1
+		until subticks[subtick]()() or subtick == #subticks
+		if subtick == #subticks then subtick = 0 end
+	else
+		if not subtickco or coroutine.status(subtickcothread) == "dead" then
+			if subtick == 0 then tickcount = tickcount + 1 end
+			currentsst = nil
+			forcespread = {}
+			local hit = false
+			ResetCells(first)
+			repeat
+				subtick = subtick%#subticks+1
+				subtickco, subtickcothread = subticks[subtick]()
+				hit = subtickco(true)
+			until hit or subtick == #subticks
+			if not hit then subtickco = nil end
+			if hit then
+				goto out
+			end
+		end
+		if subtickco then
+			ResetCells(first)
+			subtickco(true)
+		end
+		::out::
+		if subtick == #subticks then subtick = 0; subtickco = nil end
 	end
+	overallcount = overallcount + 1
 	held = nil
 	heldhori = nil
 	heldvert = nil
@@ -17809,7 +18007,7 @@ function love.update(dt)
 		local anim = recorddata.animation
 		dtime = dtime + dt
 		if recording and anim.fromcam and anim.tocam then
-			local lerp = (dtime / delay / anim.lerptotal) + (tickcount - anim.lerpstart) / anim.lerptotal
+			local lerp = math.min(1, (dtime / delay / anim.lerptotal) + (overallcount - anim.lerpstart) / anim.lerptotal)
 			cam.x = anim.fromcam.x + anim.tocam.x * lerp
 			cam.y = anim.fromcam.y + anim.tocam.y * lerp
 		end
@@ -17818,7 +18016,7 @@ function love.update(dt)
 				for i=1, #anim.ticks, 2 do
 					local value = anim.ticks[i]
 					local transition = anim.ticks[i+1]
-					if value == tickcount then
+					if value == overallcount then
 						local camvalue = anim.camera and tostring(anim.camera[i+2])
 						local length = 0
 						if transition == "->" or (transition or ""):match("^%-%d*%.?%d+>$") then
@@ -18741,7 +18939,11 @@ function DrawCell(cell,x,y,interpolate,alpha,scale,meta)
 	local cx,cy,crot
 	local lerp = itime/delay
 	interpolate = interpolate
-	if interpolate then
+	if not forcespread[cell.vars.forceinterp] then cell.vars.forceinterp = nil end
+	if cell.vars.forceinterp then
+		local force = forcespread[cell.vars.forceinterp]
+		cx,cy,crot = math.floor(force.x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(force.y*cam.zoom-cam.y+cam.zoom*.5+300*winym),force.rot*math.halfpi
+	elseif interpolate then
 		cx,cy,crot = math.floor(math.graphiclerp(cell.lastvars[1],x,lerp)*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(math.graphiclerp(cell.lastvars[2],y,lerp)*cam.zoom-cam.y+cam.zoom*.5+300*winym),math.graphiclerp(cell.rot-cell.lastvars[3],cell.rot,lerp)*math.halfpi%(math.pi*2)
 	else
 		cx,cy,crot = math.floor(x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(y*cam.zoom-cam.y+cam.zoom*.5+300*winym),cell.rot*math.halfpi
@@ -18749,6 +18951,10 @@ function DrawCell(cell,x,y,interpolate,alpha,scale,meta)
 	local canv = love.graphics.getCanvas()
 	scale,alpha = scale or 1,alpha or 1
 	cx,cy = TransformScreenPos(cx,cy,cell,x,y,interpolate,alpha,scale,meta)
+	if currentsst == cell then
+		drawsst = {x=cx,y=cy}
+		anysst = true
+	end
 	if cell.id ~= 0 and cell.vars.paint ~= "I" then 
 		local fancy = fancy
 		if x == math.floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom) and y == math.floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom) then
@@ -18787,7 +18993,10 @@ function DrawCell(cell,x,y,interpolate,alpha,scale,meta)
 		for i=1,#(cell.eatencells or {}) do
 			local ecell = cell.eatencells[i]
 			if ecell.id ~= 0 and ecell ~= cell then 
-				DrawCell(ecell,cell.id == 0 and x or math.lerp(cell.lastvars[1],x,lerp),cell.id == 0 and y or math.lerp(cell.lastvars[2],y,lerp),true,alpha,math.lerp(scale,0,lerp),(meta or 0) + 1)
+				DrawCell(ecell,cell.id == 0 and x or 
+				math.lerp(cell.lastvars[1],x,lerp),cell.id == 0 and y or 
+				math.lerp(cell.lastvars[2],y,lerp),true,alpha,
+				math.lerp(scale,0,lerp),(meta or 0) + 1)
 			end
 		end
 	end
@@ -18848,10 +19057,10 @@ function GetDrawBounds(off, bg)
 		math.min(math.floor((cam.y+300*winym)/cam.zoom)+1,height-1-off),
 		"rightdown"
 	else
-		return math.max(math.floor(cam.x/cam.zoom),off),
-		math.min(math.floor((cam.x+recorddata.canvas:getWidth())/cam.zoom)+1,width-1-off),
-		math.max(math.floor(cam.y/cam.zoom),off),
-		math.min(math.floor((cam.y+recorddata.canvas:getHeight())/cam.zoom)+1,height-1-off),
+		return math.max(math.floor((cam.x-cam.zoom)/cam.zoom),off),
+		math.min(math.floor((cam.x+recorddata.canvas:getWidth()+cam.zoom)/cam.zoom)+1,width-1-off),
+		math.max(math.floor((cam.y-cam.zoom)/cam.zoom),off),
+		math.min(math.floor((cam.y+recorddata.canvas:getHeight()+cam.zoom)/cam.zoom)+1,height-1-off),
 		"rightdown"
 	end
 end
@@ -18903,11 +19112,32 @@ function DrawGrid()
 	if not persistentcanv then love.graphics.clear() end
 	for z=0,depth-1 do
 		local startx,endx,starty,endy,drawdir = GetDrawBounds(z == 0 and 0 or 1)
+		anysst = false
 		RunOn(function(c) return c.id ~= 0 end,
 			function(x,y,c)
 				DrawCell(c,x,y,true)
 			end
-			,drawdir,"all",z,startx,endx,starty,endy,z == 0)
+			,drawdir,"all",z,startx,endx,starty,endy,z == 0)()
+		if anysst then
+			love.graphics.setColor(1, 1, 1)
+			love.graphics.rectangle("line", drawsst.x-cam.zoom/2, drawsst.y-cam.zoom/2, cam.zoom, cam.zoom)
+		end
+		for i,force in ipairs(forcespread) do -- edge case crappery
+			if overallcount >= force.revealtick and force.forcetype == "push" then
+				DrawCell(force.drawcell,force.x,force.y,false)
+			end
+		end
+		for i,force in ipairs(forcespread) do
+			local x,y,rot = force.x, force.y, force.rot
+			local cx,cy,crot
+			local lerp = itime/delay
+			if true then
+				cx,cy,crot = math.floor(math.graphiclerp(force.lx,force.x,lerp)*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(math.graphiclerp(force.ly,force.y,lerp)*cam.zoom-cam.y+cam.zoom*.5+300*winym),math.graphiclerp(force.ldir,force.dir,lerp)*math.halfpi%(math.pi*2)
+			else
+				cx,cy,crot = math.floor(force.x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(force.y*cam.zoom-cam.y+cam.zoom*.5+300*winym),force.dir*math.halfpi
+			end
+			DrawBasic(GetTex("force"..force.forcetype),cx,cy,crot,fancy,1,1,1)
+		end
 	end
 	love.graphics.setCanvas(gcanvas)
 	love.graphics.setShader()
@@ -19211,7 +19441,7 @@ function DrawButtonInfo()
 	end
 end
 
-versiontxt = [[Version #r2.0.2#55aaff_ff00ffw1.0.2
+versiontxt = [[Version #r2.0.2#55aaff_ff00ffw1.1.0
 #xCelLua Machine Wiki Mod created by #ff0000_00ff00aadenboy
 #xOriginal CelLua Machine created by#00ff00_80ff80 KyYay
 #xOriginal Cell Machine by #40a0ff-80c0ffSam Hogan]]
@@ -19235,7 +19465,7 @@ function love.draw()
 		love.graphics.setColor(textcolor[1],textcolor[2],textcolor[3],.5)
 		love.graphics.print("FPS: ".. 1/delta,2,2) 
 		love.graphics.print("Tick: ".. tickcount,2,12) 
-		if subticking and not level then
+		if subticking > 0 and not level then
 			love.graphics.print("Subtick: "..subtick.."/"..#subticks,2,22) 
 		end
 		--love.graphics.print("updK: ".. updatekey,2,subticking and 32 or 22) 
