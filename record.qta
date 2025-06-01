@@ -1,12 +1,14 @@
 [board]
-  {level} ::K3\::;a;5;1;eNozMMAGLNKBwAA7AAAGGwpF;::
-  {camera} 1 1
-  {cellsize} 40
-  {capture} 9 5
+  {level} ::K3:#a0e0ff❄ Frostbite Hall ❄;1j;a;h;eNrtWclOw0AM/RsULmiyVPSQD4ADp1ZcQg9AUamEWhAVlfh6BKJbkvF4nSRSb44m9njs52cnMyufFp+r9bZMpsVsJzsV6diiT9baKa1S8cvx/MXseeJkyIVuktdvuRZA0qPPpsPDTCkNi9u9vKjK98flalOWN+nYTbLRfepcuV++Oyxn49Ekd4NZpuStiBp+y3Lvq19ANnSIglVEFgyIcmvoRCiFgH3rgK0FWG/Atfq1Xs7rEl3Dq9vwn6TtzHTJMEDsfWLnIU0+NjvUXBavF9Pv4OKxZw0Ze8aGDkIb0Dm2uXx+4TdZWPlvG6tlfE8HMxBj/GAXF0efdnwsAP1cKa7aAAJiE1ByfUWxCL/XKLnMh0+SMeb2WN0AcALIRye1LhGzCpB/+FC7kQwRofYsHVIZqilxitB1TDwCqvGx9Wn+4+NHYyI27ttDkgKwEcSUHGsxuvSpJ1QQSHjkPiPCCpORi2VJo5CoQIqBwhkmywCo64Rq2n9x/C/Bj0VH3V7bimUr5LC2FTr8JNgywv9+KJ1ss5x3Rjje6ceCdeLzpe8DauBDDD6o4TGmOJOJmExCdpqjIn9g8ZEIjlDMOJSTMNIMzcO8t9EiujKHGMQGCqLcvE/QHlxqUzj82B3b1KY/RVPEgPeLfKLyjrXPAIiM/sHodVrO3nkIa/KPs87nF9Mrg/P402MGqlNJDAqC+5cWGenfFfBmH89Z2yNRmPxcHyQn0ccwONLGJIO4eW2thc1blWZV5qq8XxxEIHUixgmPaNqyaGAC1pNeoitblS0jkE2tVfYtfpdxAIhXb0CSIUejaIFvyrZ6dsbFMCTkJdnWAGZ6R5SQD0GOQc4/uJmGTg==;::
+  {camera} 0 0
+  {cellsize} 20
+  {capture} 14 12
 
 [animation]
-  {defaultspeed} 0.5
-  {mode} forces
+  {defaultspeed} 0.2
+  {mode} ticks
   {fps} 30
-  {ticks}  0 -> 6 -> 7 -> 8
-  {camera} 0 -> 0 -> 1 -> 0
+  {ticks}  0 -> 165
+  {camera} 0 -> 0
+  {trackplayer} 0-91 0
+  {input} ::.4..51.111.51155551115111.522....5111151..4..5222511111151111111255555511.2.1.2.11511.51111..51115111115111422....5111.25515155111121151111151111111144511111.........::

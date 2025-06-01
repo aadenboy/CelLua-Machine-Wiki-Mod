@@ -103,6 +103,8 @@ end
 
 recording = false
 recorddata = {}
+recordinginput = false
+inputrecording = ""
 
 directory = love.filesystem.getSourceBaseDirectory()
 
@@ -2018,6 +2020,7 @@ function MakeTextures()
 	NewTex("rendertext","rendertext")
 	NewTex("countcells","countcells")
 	NewTex("record","recordvideo")
+	NewTex("inputrecord","recordinput")
 	NewTex("forces/push","forcepush")
 	NewTex("forces/nudge","forcenudge")
 	NewTex("forces/pull","forcepull")
@@ -6815,16 +6818,21 @@ function CreateMenu()
 		or type(sceneboard.capture[1]) ~= "number"
 		or type(sceneboard.capture[2]) ~= "number"
 		or sceneboard.capture[1] < 1
-		or sceneboard.capture[1] > 100 -- please don't do this
 		or sceneboard.capture[2] < 1
-		or sceneboard.capture[2] > 100 -- please don't do this
 		or type(sceneanimation.defaultspeed) ~= "number"
 		or type(sceneanimation.fps) ~= "number"
 		or type(sceneanimation.ticks) ~= "table"
 		or #sceneanimation.ticks < 3
 		or #sceneanimation.ticks % 2 ~= 1
 		or (type(sceneanimation.camera) ~= "table" and type(sceneanimation.camera) ~= "nil")
-		or (type(sceneanimation.camera) == "table" and #sceneanimation.camera ~= #sceneanimation.ticks) then Play("destroy") return end
+		or (type(sceneanimation.camera) == "table" and #sceneanimation.camera ~= #sceneanimation.ticks)
+		or (type(sceneanimation.trackplayer) ~= "table" and type(sceneanimation.trackplayer) ~= "nil")
+		or (type(sceneanimation.trackplayer) == "table" and (
+			type(sceneanimation.trackplayer[1]) ~= "number" and (type(sceneanimation.trackplayer[1]) ~= "string" or not sceneanimation.trackplayer[1]:match("%d+%-%d+"))
+		) and (
+			type(sceneanimation.trackplayer[2]) ~= "number" and (type(sceneanimation.trackplayer[2]) ~= "string" or not sceneanimation.trackplayer[2]:match("%d+%-%d+"))
+		))
+		then Play("destroy") return end
 		if not LoadWorld(sceneboard.level) then return end
 		RefreshWorld()
 		recording = true
@@ -6837,6 +6845,8 @@ function CreateMenu()
 			next = 0,
 			frame = 1
 		}
+		recorddata.animation.usinginput = not not recorddata.animation.input
+		recorddata.animation.input = recorddata.animation.input or ""
 		cam.x = sceneboard.camera[1] * sceneboard.cellsize
 		cam.y = sceneboard.camera[2] * sceneboard.cellsize
 		cam.zoom = sceneboard.cellsize
@@ -6857,6 +6867,13 @@ function CreateMenu()
 		recursivelyDelete("recording")
 		love.filesystem.createDirectory("recording")
 		-- ::rth:: --
+	end,false,mbleandnopuz,"topleft",0)
+	NewButton(270,170,40,40,"recordinput","recordinputbtn","Record Input","Records your input as you play. Toggle this off to copy what was recorded.",function(b)
+		recordinginput = not recordinginput
+		if not recordinginput then
+			love.system.setClipboardText(inputrecording)
+		end
+		SetEnabledColors(b,recordinginput,true)
 	end,false,mbleandnopuz,"topleft",0)
 	NewButton(-205,50,40,40,"copy","copycount","Copy as Wikitext",nil,function()
 		local a = ""
@@ -16702,7 +16719,8 @@ function DoIcicle(x,y,cell)
 			cx,cy,cdir = nextx,nexty,nextdir
 		end
 		supdatekey = supdatekey + 1
-		cell.vars[2] = cell.vars[2] + 1
+		cell.vars[2] = (cell.vars[2] or 0) + 1 -- there's a really weird bug with icicles right around here and idk wtf it is
+		-- I SHOULD be keeping bugs in since this is, y'know, a WIKI mod, but I don't like this one. it's stupid.
 	end
 end
 
@@ -17729,6 +17747,26 @@ function ResetCells(first)
 	end
 end
 
+--[[
+	DAWS ?
+	.... 0
+	d... 1
+	.a.. 2
+	da.. 3
+	..w. 4
+	d.w. 5
+	.aw. 6
+	daw. 7
+	...s 8
+	d..s 9
+	.a.s a
+	da.s b
+	..ws c
+	d.ws d
+	.aws e
+	daws f
+]]
+
 function DoTick(first)
 	if winscreen then return end
 	if not v and draggedcell then
@@ -17746,11 +17784,14 @@ function DoTick(first)
 	if updatekey > 1000000000000 then updatekey = 0 end --juuuust in case
 	if supdatekey > 1000000000000 then supdatekey = 0 end
 	if stickkey > 1000000000000 then stickkey = 0 end
-	if love.keyboard.isDown("d") or love.keyboard.isDown("right") then held = held or 0; heldhori = heldhori or 0 end
-	if love.keyboard.isDown("a") or love.keyboard.isDown("left") then held = held or 2; heldhori = heldhori or 2 end
-	if love.keyboard.isDown("w") or love.keyboard.isDown("up") then held = held or 3; heldvert = heldvert or 3 end
-	if love.keyboard.isDown("s") or love.keyboard.isDown("down") then held = held or 1; heldvert = heldvert or 1 end
-	if tickcount == 0 then overallcount = 0 end
+	if tickcount == 0 then overallcount = 0; inputrecording = "" end
+	local keyid = 0
+	local curkey = recording and tonumber(recorddata.animation.input:sub(overallcount+1, overallcount+1), 16) or 0
+	if (not recording and love.keyboard.isDown("d") or love.keyboard.isDown("right")) or (recording and curkey % 2 == 1) then held = held or 0; heldhori = heldhori or 0; keyid = keyid + 1 end
+	if (not recording and love.keyboard.isDown("a") or love.keyboard.isDown("left")) or (recording and curkey % 4 >= 2) then held = held or 2; heldhori = heldhori or 2; keyid = keyid + 2 end
+	if (not recording and love.keyboard.isDown("w") or love.keyboard.isDown("up")) or (recording and curkey % 8 >= 4) then held = held or 3; heldvert = heldvert or 3; keyid = keyid + 4 end
+	if (not recording and love.keyboard.isDown("s") or love.keyboard.isDown("down")) or (recording and curkey >= 8) then held = held or 1; heldvert = heldvert or 1; keyid = keyid + 8 end
+	if recordinginput then inputrecording = inputrecording..(keyid == 0 and "." or string.format("%x", keyid)) end
 	if subticking == 0 or level then
 		subtickco = nil
 		currentsst = nil
@@ -18008,8 +18049,13 @@ function love.update(dt)
 		dtime = dtime + dt
 		if recording and anim.fromcam and anim.tocam then
 			local lerp = math.min(1, (dtime / delay / anim.lerptotal) + (overallcount - anim.lerpstart) / anim.lerptotal)
-			cam.x = anim.fromcam.x + anim.tocam.x * lerp
-			cam.y = anim.fromcam.y + anim.tocam.y * lerp
+			if not anim.trackplayer then
+				cam.x = anim.fromcam.x + anim.tocam.x * lerp
+				cam.y = anim.fromcam.y + anim.tocam.y * lerp
+			else
+				anim.trackplayer.offx = anim.fromcam.x + anim.tocam.x * lerp
+				anim.trackplayer.offy = anim.fromcam.y + anim.tocam.y * lerp
+			end
 		end
 		if dtime > (level and .2 or delay) then
 			if recording then
@@ -18277,6 +18323,25 @@ function love.update(dt)
 		cam.x = math.abs(cam.x-cam.tarx) < .01 and cam.tarx or cam.x
 		cam.y = math.abs(cam.y-cam.tary) < .01 and cam.tary or cam.y
 		cam.zoom = math.abs(cam.zoom-cam.tarzoom) < .01 and cam.tarzoom or cam.zoom
+	elseif recording and recorddata.animation.trackplayer then
+		local tp = recorddata.animation.trackplayer
+		local width, height = recorddata.scene.capture[1] * cam.zoom, recorddata.scene.capture[2] * cam.zoom
+		local winxm, winym = width / 800, height / 600
+		local minx, maxx, miny, maxy
+		if type(tp[1]) == "number" then minx, maxx = tp[1], tp[1] else minx, maxx = tp[1]:match("(%d+)%-(%d+)") end
+		if type(tp[2]) == "number" then miny, maxy = tp[2], tp[2] else miny, maxy = tp[2]:match("(%d+)%-(%d+)") end
+		cam.tarx = math.max(math.min(cam.tarx,width*cam.zoom-100+400*winxm),100-400*winxm)
+		cam.tary = math.max(math.min(cam.tary,height*cam.zoom-100+300*winym),100-300*winym)
+		cam.x = tp.origx or cam.x
+		cam.y = tp.origy or cam.y
+		cam.x = math.lerp(cam.x,cam.tarx,1-.9^(dt*100))
+		cam.y = math.lerp(cam.y,cam.tary,1-.9^(dt*100))
+		cam.x = math.abs(cam.x-cam.tarx) < .01 and cam.tarx or cam.x
+		cam.y = math.abs(cam.y-cam.tary) < .01 and cam.tary or cam.y
+		tp.origx = cam.x
+		tp.origy = cam.y
+		cam.x = math.min(math.max(cam.x + (tp.offx or 0) - width/2, minx*cam.zoom), maxx*cam.zoom)
+		cam.y = math.min(math.max(cam.y + (tp.offy or 0) - height/2, miny*cam.zoom), maxy*cam.zoom)
 	end
 	itime = math.min(itime + dt,delay)
 	hudlerp = math.min(hudlerp + dt*10,1)
@@ -19238,11 +19303,35 @@ function DrawMainMenu()
 		DrawGrid()
 		love.graphics.setColor(1,1,1,1)
 		if recording then
+			if recorddata.animation.usinginput then
+				local keysize = math.ceil(math.min(recorddata.canvas:getWidth() / 10, recorddata.canvas:getHeight() / 10))
+				local padding = keysize/4
+				local kx, ky = keysize/2, recorddata.canvas:getHeight()-keysize*2.5-padding
+				local curkey = tonumber(recorddata.animation.input:sub(overallcount+1, overallcount+1), 16) or 0
+				love.graphics.setColor(0.7, 0.7, 0.7, curkey % 2 == 1 and 1 or 0.2)
+				love.graphics.rectangle("fill", kx+keysize*2+padding*2, ky+keysize+padding, keysize, keysize) -- d
+				love.graphics.setColor(0.3, 0.3, 0.3, curkey % 2 == 1 and 1 or 0.8)
+				love.graphics.rectangle("line", kx+keysize*2+padding*2, ky+keysize+padding, keysize, keysize) -- d
+				love.graphics.setColor(0.7, 0.7, 0.7, curkey % 4 >= 2 and 1 or 0.2)
+				love.graphics.rectangle("fill", kx, ky+keysize+padding, keysize, keysize) -- a
+				love.graphics.setColor(0.3, 0.3, 0.3, curkey % 4 >= 2 and 1 or 0.8)
+				love.graphics.rectangle("line", kx, ky+keysize+padding, keysize, keysize) -- a
+				love.graphics.setColor(0.7, 0.7, 0.7, curkey % 8 >= 4 and 1 or 0.2)
+				love.graphics.rectangle("fill", kx+keysize+padding, ky, keysize, keysize) -- w
+				love.graphics.setColor(0.3, 0.3, 0.3, curkey % 8 >= 4 and 1 or 0.8)
+				love.graphics.rectangle("line", kx+keysize+padding, ky, keysize, keysize) -- w
+				love.graphics.setColor(0.7, 0.7, 0.7, curkey >= 8 and 1 or 0.2)
+				love.graphics.rectangle("fill", kx+keysize+padding, ky+keysize+padding, keysize, keysize) -- s
+				love.graphics.setColor(0.3, 0.3, 0.3, curkey >= 8 and 1 or 0.8)
+				love.graphics.rectangle("line", kx+keysize+padding, ky+keysize+padding, keysize, keysize) -- s
+			end
+			love.graphics.setColor(1,1,1,1)
 			love.graphics.setCanvas()
 			love.graphics.rectangle("line", 500, 100, recorddata.canvas:getWidth(), recorddata.canvas:getHeight())
 			love.graphics.draw(recorddata.canvas, 500, 100)
 			love.graphics.print(quanta.dump(recorddata))
-			love.graphics.print(tickcount, 500, 0)
+			local i = recorddata.animation.input or ""
+			love.graphics.print({{1, 1, 1}, overallcount.."\n"..i:sub(0, overallcount), {0, 1, 1}, i:sub(overallcount+1, overallcount+1), {1, 1, 1}, i:sub(overallcount+2, -1)}, 500, 100 + recorddata.canvas:getHeight())
 			recorddata.canvas:newImageData():encode("png", "recording/"..recorddata.frame..".png")
 			recorddata.frame = recorddata.frame + 1
 		end
