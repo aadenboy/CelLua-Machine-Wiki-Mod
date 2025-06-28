@@ -6847,6 +6847,7 @@ function CreateMenu()
 		}
 		recorddata.animation.usinginput = not not recorddata.animation.input
 		recorddata.animation.input = recorddata.animation.input or ""
+		recorddata.animation.ltime = 0
 		cam.x = sceneboard.camera[1] * sceneboard.cellsize
 		cam.y = sceneboard.camera[2] * sceneboard.cellsize
 		cam.zoom = sceneboard.cellsize
@@ -17842,6 +17843,7 @@ function DoTick(first)
 	heldvert = nil
 	actionpressed = nil
 	isinitial = false
+	recorddata.debug = dtime..", "..(level and .2 or delay)..", "..(dtime - (level and .2 or delay))
 	dtime = recording and math.max(0, dtime - (level and .2 or delay)) or 0
 	itime = 0
 end
@@ -18047,17 +18049,6 @@ function love.update(dt)
 		local scene = recorddata.scene
 		local anim = recorddata.animation
 		dtime = dtime + dt
-		if recording and anim.fromcam and anim.tocam then
-			local lerp = math.min(1, (dtime / delay / anim.lerptotal) + (overallcount - anim.lerpstart) / anim.lerptotal)
-			anim.lerpdebug = lerp
-			if not anim.trackplayer then
-				cam.x = anim.fromcam.x + anim.tocam.x * lerp
-				cam.y = anim.fromcam.y + anim.tocam.y * lerp
-			else
-				anim.trackplayer.offx = anim.fromcam.x + anim.tocam.x * lerp
-				anim.trackplayer.offy = anim.fromcam.y + anim.tocam.y * lerp
-			end
-		end
 		if dtime > (level and .2 or delay) then
 			if recording then
 				for i=1, #anim.ticks, 2 do
@@ -18067,6 +18058,7 @@ function love.update(dt)
 						local camvalue = anim.camera and tostring(anim.camera[i+2])
 						local length = 0
 						recorddata.current = i
+						anim.ltime = 0
 						if transition == "->" or (transition or ""):match("^%-%d*%.?%d+>$") then
 							local number = tonumber(transition:match("^%-(%d*%.?%d+)>$"))
 							delay = number or anim.defaultspeed
@@ -18088,11 +18080,18 @@ function love.update(dt)
 						anim.lerpstart = value + 1
 						recorddata.next = recorddata.timer + length
 						if camvalue and (camvalue:match("^[%+%-]?i$") or camvalue:match("^[%+%-]?%d*%.?%d+i?$") or camvalue:match("^[%+%-]?%d*%.?%d+[%+%-]%d*%.?%d*i$")) then
+							if not anim.trackplayer and anim.tocam then
+								cam.x = anim.fromcam.x + anim.tocam.x
+								cam.y = anim.fromcam.y + anim.tocam.y
+							elseif anim.tocam then
+								anim.trackplayer.offx = anim.fromcam.x + anim.tocam.x
+								anim.trackplayer.offy = anim.fromcam.y + anim.tocam.y
+							end
 							local x, y = camvalue:match("^([%+%-]?%d*%.?%d+)([%+%-]%d*%.?%d*)i$")
 							x = x or camvalue:match("^([%+%-]?%d*%.?%d+)$")
 							y = y or camvalue:match("^([%+%-]?%d*%.?%d+)i$") or camvalue:match("^([%+%-]?)i$")
 							if y == "+" or y == "-" then y = y.."1" end
-							anim.fromcam = {x = cam.x, y = cam.y}
+							anim.fromcam = not anim.trackplayer and {x = cam.x, y = cam.y} or {x = anim.trackplayer.offx, y = anim.trackplayer.offy}
 							anim.tocam = {x = (tonumber(x) or 0) * scene.cellsize, y = (tonumber(y) or 0) * scene.cellsize}
 						end
 					end
@@ -18102,6 +18101,18 @@ function love.update(dt)
 				DoTick(i==1)
 			end
 			::notick::
+		end
+		if recording and anim.fromcam and anim.tocam then
+			anim.ltime = anim.ltime + dt
+			local lerp = math.min(1, anim.ltime / (anim.lerptotal * delay))
+			anim.lerpdebug = lerp
+			if not anim.trackplayer then
+				cam.x = anim.fromcam.x + anim.tocam.x * lerp
+				cam.y = anim.fromcam.y + anim.tocam.y * lerp
+			else
+				anim.trackplayer.offx = anim.fromcam.x + anim.tocam.x * lerp
+				anim.trackplayer.offy = anim.fromcam.y + anim.tocam.y * lerp
+			end
 		end
 	end
 	hoveredbutton = nil
@@ -19353,15 +19364,21 @@ function DrawMainMenu()
 					cm = cm..v.." "
 				end
 			end
-			love.graphics.printf({
-				{1, 1, 1}, "Frame "..recorddata.frame.." ("..string.format("%.02f", recorddata.timer).."s)"
-				         .."\nGlobal tick ("..overallcount.."): "..ts, {0, 1, 1}, tm, {1, 1, 1}, te
-						 .."\nCamera {"..string.format("%.02f", cam.x)..", "..string.format("%.02f", cam.y).."}: "..cs, {0, 1, 1}, cm, {1, 1, 1}, ce
-						 .."\nController: "..i:sub(0, overallcount), {0, 1, 1}, i:sub(overallcount+1, overallcount+1), {1, 1, 1}, i:sub(overallcount+2, -1)
-						 .."\n"..string.format("%.02f%%", (recorddata.animation.lerpdebug or 0) * 100)
-			}, 50, 50 + recorddata.canvas:getHeight(), settings.window_width - 100, "left")
-			recorddata.canvas:newImageData():encode("png", "recording/"..recorddata.frame..".png")
-			recorddata.frame = recorddata.frame + 1
+			if overallcount > 0 then
+				recorddata.canvas:newImageData():encode("png", "recording/"..recorddata.frame..".png")
+				recorddata.frame = recorddata.frame + 1
+				love.graphics.printf({
+					{1, 1, 1}, "Frame "..recorddata.frame.." ("..string.format("%.02f", recorddata.timer).."s)"
+							 .."\nGlobal tick ("..overallcount.."): "..ts, {0, 1, 1}, tm, {1, 1, 1}, te
+							 .."\nCamera {"..string.format("%.02f", cam.x)..", "..string.format("%.02f", cam.y).."}: "..cs, {0, 1, 1}, cm, {1, 1, 1}, ce
+							 .."\nController: "..i:sub(0, overallcount), {0, 1, 1}, i:sub(overallcount+1, overallcount+1), {1, 1, 1}, i:sub(overallcount+2, -1)
+							 .."\n"..string.format("%.02f%%", (recorddata.animation.lerpdebug or 0) * 100)
+							 .."\n"..(recorddata.debug or "")
+				}, 50, 50 + recorddata.canvas:getHeight(), settings.window_width - 100, "left")
+			else
+				love.graphics.print("Waiting...", 50, 50 + recorddata.canvas:getHeight())
+			end
+			if love.keyboard.isDown("tab") then love.timer.sleep(0.5) end
 		end
 		lvltitle.update()
 		lvldesc.update()
