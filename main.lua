@@ -17842,7 +17842,7 @@ function DoTick(first)
 	heldvert = nil
 	actionpressed = nil
 	isinitial = false
-	dtime = 0
+	dtime = recording and math.max(0, dtime - (level and .2 or delay)) or 0
 	itime = 0
 end
 
@@ -18049,6 +18049,7 @@ function love.update(dt)
 		dtime = dtime + dt
 		if recording and anim.fromcam and anim.tocam then
 			local lerp = math.min(1, (dtime / delay / anim.lerptotal) + (overallcount - anim.lerpstart) / anim.lerptotal)
+			anim.lerpdebug = lerp
 			if not anim.trackplayer then
 				cam.x = anim.fromcam.x + anim.tocam.x * lerp
 				cam.y = anim.fromcam.y + anim.tocam.y * lerp
@@ -18065,6 +18066,7 @@ function love.update(dt)
 					if value == overallcount then
 						local camvalue = anim.camera and tostring(anim.camera[i+2])
 						local length = 0
+						recorddata.current = i
 						if transition == "->" or (transition or ""):match("^%-%d*%.?%d+>$") then
 							local number = tonumber(transition:match("^%-(%d*%.?%d+)>$"))
 							delay = number or anim.defaultspeed
@@ -19327,11 +19329,37 @@ function DrawMainMenu()
 			end
 			love.graphics.setColor(1,1,1,1)
 			love.graphics.setCanvas()
-			love.graphics.rectangle("line", 500, 100, recorddata.canvas:getWidth(), recorddata.canvas:getHeight())
-			love.graphics.draw(recorddata.canvas, 500, 100)
-			love.graphics.print(quanta.dump(recorddata))
+			love.graphics.rectangle("line", 50, 50, recorddata.canvas:getWidth(), recorddata.canvas:getHeight())
+			love.graphics.draw(recorddata.canvas, 50, 50)
+			--love.graphics.print(quanta.dump(recorddata))
 			local i = recorddata.animation.input or ""
-			love.graphics.print({{1, 1, 1}, overallcount.."\n"..i:sub(0, overallcount), {0, 1, 1}, i:sub(overallcount+1, overallcount+1), {1, 1, 1}, i:sub(overallcount+2, -1)}, 500, 100 + recorddata.canvas:getHeight())
+			local ts, tm, te = "", "", ""
+			local cs, cm, ce = "", "", ""
+			for i,v in ipairs(recorddata.animation.ticks) do
+				if i < recorddata.current then
+					ts = ts..v.." "
+				elseif i > recorddata.current + 2 then
+					te = te..v.." "
+				else
+					tm = tm..v.." "
+				end
+			end
+			for i,v in ipairs(recorddata.animation.camera) do
+				if i < recorddata.current then
+					cs = cs..v.." "
+				elseif i > recorddata.current + 2 then
+					ce = ce..v.." "
+				else
+					cm = cm..v.." "
+				end
+			end
+			love.graphics.printf({
+				{1, 1, 1}, "Frame "..recorddata.frame.." ("..string.format("%.02f", recorddata.timer).."s)"
+				         .."\nGlobal tick ("..overallcount.."): "..ts, {0, 1, 1}, tm, {1, 1, 1}, te
+						 .."\nCamera {"..string.format("%.02f", cam.x)..", "..string.format("%.02f", cam.y).."}: "..cs, {0, 1, 1}, cm, {1, 1, 1}, ce
+						 .."\nController: "..i:sub(0, overallcount), {0, 1, 1}, i:sub(overallcount+1, overallcount+1), {1, 1, 1}, i:sub(overallcount+2, -1)
+						 .."\n"..string.format("%.02f%%", (recorddata.animation.lerpdebug or 0) * 100)
+			}, 50, 50 + recorddata.canvas:getHeight(), settings.window_width - 100, "left")
 			recorddata.canvas:newImageData():encode("png", "recording/"..recorddata.frame..".png")
 			recorddata.frame = recorddata.frame + 1
 		end
