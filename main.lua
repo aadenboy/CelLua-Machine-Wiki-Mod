@@ -83,7 +83,7 @@ function yield(case, ret)
 	end
 end
 
-function logforce(cx,cy,cdir,vars,oldcell,doyield)
+function logforce(cx,cy,cdir,vars,oldcell,doyield,bias)
 	if subticking == 3 then
 		table.insert(forcespread, {
 			x = cx, y = cy,
@@ -92,6 +92,7 @@ function logforce(cx,cy,cdir,vars,oldcell,doyield)
 			dir = cdir, ldir = vars.lastdir,
 			rot = oldcell.rot,
 			forcetype = vars.forcetype,
+			bias = bias and (bias == math.huge and "∞" or bias) or "",
 			cell = oldcell,
 			drawcell = table.copy(oldcell),
 			revealtick = overallcount + 2 -- edge case with pushing for some unknown reason
@@ -105,6 +106,19 @@ recording = false
 recorddata = {}
 recordinginput = false
 inputrecording = ""
+
+local function packInt16LE(value)
+	if value > 32767 then value = 32767 end
+	if value < -32768 then value = -32768 end
+  
+	if value < 0 then
+	  value = 0x10000 + value
+	end
+  
+	local low = value % 256
+	local high = math.floor(value / 256)
+	return string.char(low, high)
+  end  
 
 directory = love.filesystem.getSourceBaseDirectory()
 
@@ -266,11 +280,39 @@ function GetSFX(name)
 	return sounds[name].audio
 end
 
+function GetSFXData(name)
+	return sounds[name].data
+end
+
 function GetMusic(name)
 	return music[name].audio
 end
 
 function Play(aud)
+	if recording and recorddata.animation.samplerate then
+		local samplerate = recorddata.animation.samplerate
+		local current = math.floor(recorddata.timer * samplerate)
+
+		local last = recorddata.audio.playing[aud]
+		if not last or (current - last.time) > samplerate * 0.05 then
+			if last then last.cutoff = math.min(last.cutoff, current - last.time) end
+
+			local sfx = GetSFXData(aud)
+			local sourcerate = sfx:getSampleRate()
+			local length = math.floor(sfx:getSampleCount() * (samplerate / sourcerate))
+
+			local entry = {
+				time = current, -- when it will start playing, as a sample index
+				data = sfx,
+				name = aud,
+				cutoff = length, -- how many target-rate samples this will span
+				samplerate = sourcerate,
+			}
+
+			table.insert(recorddata.audio.buffer, entry)
+			recorddata.audio.playing[aud] = entry
+		end
+	end
 	if settings.sfxvolume > 0 then
 		local s = GetSFX(aud)
 		if s:tell() > .05 then s:stop() end
@@ -2027,6 +2069,9 @@ function MakeTextures()
 	NewTex("forces/grab","forcegrab")
 	NewTex("forces/grabL","forcegrabL")
 	NewTex("forces/grabR","forcegrabR")
+	NewTex("forces/shove","forceshove")
+	NewTex("forces/shoveL","forceshoveL")
+	NewTex("forces/shoveR","forceshoveR")
 	NewTex("forces/slice","forceslice")
 	NewTex("forces/sliceL","forcesliceL")
 	NewTex("forces/sliceR","forcesliceR")
@@ -2034,6 +2079,13 @@ function MakeTextures()
 	NewTex("forces/dig","forcedig")
 	NewTex("forces/staple","forcestaple")
 	NewTex("forces/swap","forceswap")
+	NewTex("forces/rotcw","forcerotcw")
+	NewTex("forces/rotccw","forcerotccw")
+	NewTex("forces/rot180","forcerot180")
+	NewTex("forces/rotfullcw","forcerotfullcw")
+	NewTex("forces/rotfullccw","forcerotfullccw")
+	NewTex("forces/flip","forceflip")
+	NewTex("forces/redirect","forceredirect")
 end
 
 function MakePackBtn(i,pack)
@@ -4585,8 +4637,9 @@ sounds = {}
 function NewSFX(path,name,mult)
 	mult = mult or 1
 	local sfx = love.audio.newSource("audio/"..path, "static")
+	local data = love.sound.newSoundData("audio/"..path)
 	sfx:setVolume(settings.sfxvolume*mult)
-	sounds[name] = {audio=sfx,mult=mult}
+	sounds[name] = {audio=sfx,mult=mult,data=data}
 end
 	
 function LoadAudio()
@@ -5069,7 +5122,11 @@ function RefreshWorld()
 	width = newwidth+2
 	height = newheight+2
 	subtick = 0
+	coroutclose = true
+	if subtickcothread and coroutine.status(subtickcothread) ~= "dead" then coroutine.resume(subtickcothread) end
+	coroutclose = false
 	subtickco = nil
+	subtickcothread = nil
 	currentsst = nil
 	forcespread = {}
 	tickcount = 0
@@ -6832,10 +6889,10 @@ function CreateMenu()
 		) and (
 			type(sceneanimation.trackplayer[2]) ~= "number" and (type(sceneanimation.trackplayer[2]) ~= "string" or not sceneanimation.trackplayer[2]:match("%d+%-%d+"))
 		))
+		or (type(sceneanimation.samplerate) ~= "number" and type(sceneanimation.samplerate) ~= "nil")
 		then Play("destroy") return end
 		if not LoadWorld(sceneboard.level) then return end
 		RefreshWorld()
-		recording = true
 		recorddata = {
 			scene = sceneboard,
 			animation = sceneanimation,
@@ -6843,7 +6900,11 @@ function CreateMenu()
 			current = 1,
 			timer = 0,
 			next = 0,
-			frame = 1
+			frame = 1,
+			audio = {
+				buffer = {},
+				playing = {}
+			}
 		}
 		recorddata.animation.usinginput = not not recorddata.animation.input
 		recorddata.animation.input = recorddata.animation.input or ""
@@ -6867,6 +6928,7 @@ function CreateMenu()
 		Play("unlock")
 		recursivelyDelete("recording")
 		love.filesystem.createDirectory("recording")
+		recording = true
 		-- ::rth:: --
 	end,false,mbleandnopuz,"topleft",0)
 	NewButton(270,170,40,40,"recordinput","recordinputbtn","Record Input","Records your input as you play. Toggle this off to copy what was recorded.",function(b)
@@ -8617,9 +8679,13 @@ function RotateCellRaw(c,rot,force)
 	end
 end
 
+local rottypes = {"rotcw", "rot180", "rotccw", "rotfullcw", [-4] = "rotfullccw"}
 function RotateCell(x,y,rot,dir,large,forced)
 	local cell = GetCell(x,y)
 	if not forced and IsUnbreakable(cell,dir,x,y,{forcetype="rotate"}) then return end
+	local lx, ly = StepBack(x,y,dir)
+	local arot = (rot % 4 == 0 and rot ~= 0) and (rot < 0 and -4 or 4) or (rot % 4)
+	if arot ~= 0 then logforce(x,y,0,{lastx=lx,lasty=ly,lastdir=0,forcetype=rottypes[arot]},getempty()) end
 	local success = false
 	if cell.id == 105 and updatekey ~= cell.updatekey then
 		RotateCellRaw(cell,rot)
@@ -8648,6 +8714,8 @@ end
 function RotateCellTo(x,y,rot,dir,large,forced)
 	local cell = GetCell(x,y)
 	if not forced and IsUnbreakable(cell,dir,x,y,{forcetype="redirect"}) then return end
+	local lx, ly = StepBack(x,y,dir)
+	logforce(x,y,rot,{lastx=lx,lasty=ly,lastdir=rot,forcetype="redirect"},getempty())
 	local success = false
 	local totalrot = rot-cell.rot
 	if cell.id == 105 and updatekey ~= cell.updatekey then
@@ -9004,6 +9072,8 @@ end
 function FlipCell(x,y,rot,dir,large,forced)
 	local cell = GetCell(x,y)
 	if not forced and IsUnbreakable(cell,dir,x,y,{forcetype="flip"}) then return end
+	local lx, ly = StepBack(x,y,dir)
+	logforce(x,y,rot,{lastx=lx,lasty=ly,lastdir=rot,forcetype="flip"},getempty())
 	local success = false
 	rot = rot%2
 	if cell.id == 105 and updatekey ~= cell.updatekey then
@@ -11674,6 +11744,7 @@ function NudgeCell(x,y,dir,vars)
 		vars.lastx,vars.lasty = StepBack(x,y,dir)
 		vars.lastdir = dir
 		logforce(x,y,dir,vars,oldcell)
+		if coroutclose then return end
 		vars.lastx,vars.lasty,vars.lastdir = x,y,dir
 		local destroy = IsDestroyer(checkedcell,cdir,cx,cy,vars)
 		if vars.forcedestroy or destroy and (x ~= cx or y ~= cy) then
@@ -11708,6 +11779,7 @@ function NudgeCellTo(lastcell,x,y,dir,vars)
 	vars.lastcell = lastcell
 	vars.lastx,vars.lasty,vars.lastdir = x,y,dir
 	logforce(x,y,dir,vars,checkedcell)
+	if coroutclose then return end
 	local destroy = IsDestroyer(checkedcell,dir,x,y,vars)
 	if vars.forcedestroy or destroy then
 		vars.active = destroy
@@ -11758,7 +11830,8 @@ function PushCell(x,y,dir,vars)
 		cx,cy,cdir = NextCell(cx,cy,cdir,vars)
 		if not cx or vars.repeats > vars.maximum then force = 0 break end
 		local oldcell = GetCell(cx,cy,vars.layer)
-		logforce(cx,cy,cdir,vars,oldcell)
+		logforce(cx,cy,cdir,vars,oldcell,true,force)
+		if coroutclose then return end
 		vars.destroying = vars.forcedestroy or not vars.skipfirst and IsDestroyer(oldcell,cdir,cx,cy,vars)
 		local oldforce = force
 		force = HandlePush(force,oldcell,cdir,cx,cy,vars)
@@ -11842,8 +11915,9 @@ function LGrabCell(x,y,dir,vars)
 		if not cx or vars.repeats > vars.maximum then vars.ended = true break end
 		cdir = (cdir+1)%4
 		local oldcell = GetCell(cx,cy,vars.layer)
-		vars.forcetype = "grabL"
-		logforce(cx,cy,cdir,vars,oldcell)
+		vars.forcetype = vars.strong and "shoveL" or "grabL"
+		logforce(cx,cy,cdir,vars,oldcell,true,force)
+		if coroutclose then return end
 		vars.forcetype = "grab"
 		local transparent 
 		local bluh
@@ -11918,8 +11992,9 @@ function RGrabCell(x,y,dir,vars)
 		if not cx or vars.repeats > vars.maximum then vars.ended = true break end
 		cdir = (cdir-1)%4
 		local oldcell = GetCell(cx,cy,vars.layer)
-		vars.forcetype = "grabR"
-		logforce(cx,cy,cdir,vars,oldcell)
+		vars.forcetype = vars.strong and "shoveR" or "grabR"
+		logforce(cx,cy,cdir,vars,oldcell,true,force)
+		if coroutclose then return end
 		vars.forcetype = "grab"
 		local transparent 
 		if not vars.skipfirst or vars.repeats > 1 then
@@ -11972,8 +12047,10 @@ function GrabCell(x,y,dir,vars)
 	local vars3 = {}
 	vars3.lastx,vars3.lasty = StepBack(x,y,dir)
 	vars3.lastdir = dir
+	vars3.forcetype = vars3.strong and "shove" or "grab"
+	logforce(x,y,dir,vars3,oldcell,vars.force or 0)
 	vars3.forcetype = "grab"
-	logforce(x,y,dir,vars3,oldcell)
+	if coroutclose then return end
 	local success,force = LGrabCell(x,y,dir,vars2)
 	if success and GetCell(x,y,vars.layer) ~= oldcell then
 		vars.force = force
@@ -12042,7 +12119,8 @@ function PullCell(x,y,dir,vars)
 		if not cx or vars.repeats > vars.maximum then vars.ended = true break end
 		cdir = (cdir+2)%4
 		local oldcell = GetCell(cx,cy,vars.layer)
-		logforce(cx,cy,cdir,vars,oldcell)
+		logforce(cx,cy,cdir,vars,oldcell,true,force)
+		if coroutclose then return end
 		local transparent
 		if not vars.skipfirst or vars.repeats > 1 then
 			force = HandlePull(force,oldcell,cdir,cx,cy,vars)
@@ -12101,11 +12179,13 @@ function SwapCells(x1,y1,dir1,x2,y2,dir2,vars)
 	vars2.lastdir = dir1
 	vars2.forcetype = "swap"
 	logforce(x1,y1,dir1,vars2,cell1,false)
+	if coroutclose then return end
 	local vars3 = {}
 	vars3.lastx,vars3.lasty = mx,my
 	vars3.lastdir = dir2
 	vars3.forcetype = "swap"
 	logforce(x2,y2,dir2,vars3,cell2)
+	if coroutclose then return end
 	if (not unb1 or dest1) or (not unb2 or dest2) then
 		if dest1 and not unb2 and not non2 then
 			SetCell(x2,y2,getempty())
@@ -12170,6 +12250,7 @@ function RunOn(runwhen,torun,direction,chunktype,layer,startx,endx,starty,endy,h
 							forcespread = {}
 							currentsst = cell
 							coroutine.yield(true)
+							if coroutclose then return end
 						end
 					else
 						local invsize = GetChunk(cx,cy,layer,chunktype)
@@ -12212,6 +12293,7 @@ function RunOn(runwhen,torun,direction,chunktype,layer,startx,endx,starty,endy,h
 							forcespread = {}
 							currentsst = cell
 							coroutine.yield(true)
+							if coroutclose then return end
 						end
 					else
 						local invsize = GetChunk(cx,cy,layer,chunktype)
@@ -15176,7 +15258,8 @@ function SliceCell(x,y,dir,vars)
 	vars2.lastx,vars2.lasty = StepBack(x,y,dir)
 	vars2.lastdir = dir
 	vars2.forcetype = "slice"
-	logforce(x,y,dir,vars2,cell)
+	logforce(x,y,dir,vars2,cell,true,vars.force)
+	if coroutclose then return end
 	local nvars = {}
 	if not NudgeCell(x,y,dir,nvars) then
 		local cx,cy = StepForward(x,y,dir)
@@ -15201,7 +15284,8 @@ function StapleCell(x,y,dir,vars)
 	vars2.lastx,vars2.lasty = StepBack(x,y,dir)
 	vars2.lastdir = dir
 	vars2.forcetype = "staple"
-	logforce(x,y,dir,vars2,cell)
+	logforce(x,y,dir,vars2,cell,true,vars.force)
+	if coroutclose then return end
 	local nvars = {}
 	if NudgeCell(x,y,dir,nvars) then
 		local cdir = (dir == 0 or dir == 2) and 1 or 2
@@ -15220,7 +15304,8 @@ function StapleEmptyCell(x,y,dir,vars)
 	vars2.lastx,vars2.lasty = StepBack(x,y,dir)
 	vars2.lastdir = dir
 	vars2.forcetype = "staple"
-	logforce(x,y,dir,vars2,getempty())
+	logforce(x,y,dir,vars2,getempty(),true,vars.force)
+	if coroutclose then return end
 	local cdir = (dir == 0 or dir == 2) and 1 or 2
 	local cx,cy = StepBackwards(x,y,cdir)
 	PullCell(cx,cy,cdir,table.copy(vars))
@@ -15235,7 +15320,8 @@ function TunnelCell(x,y,dir,strong)
 	vars.lastx,vars.lasty = StepBack(x,y,dir)
 	vars.lastdir = dir
 	vars.forcetype = strong and "dig" or "tunnel" -- two distinct forces
-	logforce(x,y,dir,vars,cell)
+	logforce(x,y,dir,vars,cell,true,1)
+	if coroutclose then return end
 	SetCell(x,y,getempty())
 	while true do
 		cx,cy = StepForward(cx,cy,dir)
@@ -15273,7 +15359,8 @@ function LSliceCell(x,y,dir,vars)
 	vars2.lastx,vars2.lasty = StepBack(x,y,dir)
 	vars2.lastdir = dir
 	vars2.forcetype = "sliceL"
-	logforce(x,y,dir,vars2,cell)
+	logforce(x,y,dir,vars2,cell,true,vars.force)
+	if coroutclose then return end
 	local nvars = {}
 	if not NudgeCell(x,y,dir,nvars) then
 		local cx,cy = StepForward(x,y,dir)
@@ -15294,7 +15381,8 @@ function RSliceCell(x,y,dir,vars)
 	vars2.lastx,vars2.lasty = StepBack(x,y,dir)
 	vars2.lastdir = dir
 	vars2.forcetype = "slice"
-	logforce(x,y,dir,vars2,cell)
+	logforce(x,y,dir,vars2,cell,true,vars.force)
+	if coroutclose then return end
 	local nvars = {}
 	if not NudgeCell(x,y,dir,nvars) then
 		local cx,cy = StepForward(x,y,dir)
@@ -17843,8 +17931,9 @@ function DoTick(first)
 	heldvert = nil
 	actionpressed = nil
 	isinitial = false
-	recorddata.debug = dtime..", "..(level and .2 or delay)..", "..(dtime - (level and .2 or delay))
-	dtime = recording and math.max(0, dtime - (level and .2 or delay)) or 0
+	local sd = level and .2 or delay
+	recorddata.debug = dtime..", "..sd..", "..(dtime - sd)
+	dtime = recording and math.min(math.max(0, dtime - sd), sd) or 0
 	itime = 0
 end
 
@@ -18051,10 +18140,18 @@ function love.update(dt)
 		dtime = dtime + dt
 		if dtime > (level and .2 or delay) then
 			if recording then
-				for i=1, #anim.ticks, 2 do
+				if love.keyboard.isDown("escape") then
+					delay = 0.2
+					tpu = 1
+					LoadWorld(scene.level)
+					recording = false
+					love.resize()
+					goto notick
+				end
+				for i=#anim.ticks, 1, -2 do
 					local value = anim.ticks[i]
 					local transition = anim.ticks[i+1]
-					if value == overallcount then
+					if value <= overallcount then
 						local camvalue = anim.camera and tostring(anim.camera[i+2])
 						local length = 0
 						recorddata.current = i
@@ -18064,6 +18161,11 @@ function love.update(dt)
 							delay = number or anim.defaultspeed
 							tpu = 1
 							anim.lerptotal = anim.ticks[i+2] - value
+						elseif (transition or ""):match("^%-%d*%.?%d+/%d+>$") then
+							delay, tpu = transition:match("^%-(%d*%.?%d+)/(%d+)>$")
+							delay = tonumber(delay) or anim.defaultspeed
+							tpu = tonumber(tpu) or 1
+							anim.lerptotal = math.ceil((anim.ticks[i+2] - value) / tpu)
 						elseif transition == ">>" or (transition or ""):match("^>%d*%.?%d+>$") then
 							local number = tonumber(transition:match("^>(%d*%.?%d+)>$"))
 							delay = number or anim.defaultspeed
@@ -18075,25 +18177,83 @@ function love.update(dt)
 							LoadWorld(scene.level)
 							recording = false
 							love.resize()
+							
+							if anim.samplerate then
+								recorddata.timer = recorddata.timer - dt * 2
+								local channels = anim.channels == "stereo" and 2 or 1
+								local soundData = love.sound.newSoundData(
+									math.floor(recorddata.timer * anim.samplerate),
+									anim.samplerate, 16, channels
+								)
+								local function softLimit(x)
+									if x > 1 then return 1
+									elseif x < -1 then return -1
+									else return x - (x^3) / 3 end
+								end
+								if #recorddata.audio.buffer > 0 then -- still exporting silence for clarity
+									local offset = math.floor(recorddata.audio.start or 0 * anim.samplerate) --  this might fix the delay
+									local peak = 0
+									for c=1, anim.channels == "stereo" and 2 or 1 do
+										for i=offset, soundData:getSampleCount() - 1 do
+											local total = 0
+											for _, a in ipairs(recorddata.audio.buffer) do
+												if i >= a.time and i < a.time + a.cutoff then
+													local offset = i - a.time
+													local sourcerate = a.samplerate
+													local targetrate = anim.samplerate
+													local srratio = sourcerate / targetrate
+											
+													local sourceSampleIndex = math.floor(offset * srratio)
+													if sourceSampleIndex < a.data:getSampleCount() then
+														local ac = a.data:getChannelCount()
+														local sampleVal = (ac == 2) and a.data:getSample(sourceSampleIndex, c) or a.data:getSample(sourceSampleIndex)
+														total = total + sampleVal
+													end
+												end
+											end
+											peak = math.max(math.abs(total), peak)
+											if channels == 2 then soundData:setSample(i - offset, c, total) else soundData:setSample(i - offset, total) end
+										end
+									end
+									for c=1, anim.channels == "stereo" and 2 or 1 do -- to prevent clipping n crap
+										for i=0, soundData:getSampleCount() - 1 do
+											if channels == 2 then soundData:setSample(i, c, soundData:getSample(i, c) / peak) else soundData:setSample(i, soundData:getSample(i) / peak) end
+										end
+									end
+								end
+								local file = love.filesystem.newFile("recording/audio.pcm", "w")
+								local sampleCount = soundData:getSampleCount()
+								for i=0, sampleCount - 1 do
+									for c=1, channels do
+									   local sample = (channels == 2) and soundData:getSample(i, c) or soundData:getSample(i)
+									   local intSample = math.floor(sample * 32767)
+									   file:write(packInt16LE(intSample))
+									end
+								end
+								file:close()
+								soundData:release()
+							end
+
 							goto notick
 						end
 						anim.lerpstart = value + 1
 						recorddata.next = recorddata.timer + length
 						if camvalue and (camvalue:match("^[%+%-]?i$") or camvalue:match("^[%+%-]?%d*%.?%d+i?$") or camvalue:match("^[%+%-]?%d*%.?%d+[%+%-]%d*%.?%d*i$")) then
 							if not anim.trackplayer and anim.tocam then
-								cam.x = anim.fromcam.x + anim.tocam.x
-								cam.y = anim.fromcam.y + anim.tocam.y
+								cam.x = (anim.fromcam.x or cam.x) + (anim.tocam.x or 0)
+								cam.y = (anim.fromcam.y or cam.y) + (anim.tocam.y or 0)
 							elseif anim.tocam then
-								anim.trackplayer.offx = anim.fromcam.x + anim.tocam.x
-								anim.trackplayer.offy = anim.fromcam.y + anim.tocam.y
+								anim.trackplayer.offx = (anim.fromcam.x or anim.trackplayer.offx) + (anim.tocam.x or 0)
+								anim.trackplayer.offy = (anim.fromcam.y or anim.trackplayer.offy) + (anim.tocam.y or 0)
 							end
 							local x, y = camvalue:match("^([%+%-]?%d*%.?%d+)([%+%-]%d*%.?%d*)i$")
 							x = x or camvalue:match("^([%+%-]?%d*%.?%d+)$")
 							y = y or camvalue:match("^([%+%-]?%d*%.?%d+)i$") or camvalue:match("^([%+%-]?)i$")
 							if y == "+" or y == "-" then y = y.."1" end
-							anim.fromcam = not anim.trackplayer and {x = cam.x, y = cam.y} or {x = anim.trackplayer.offx, y = anim.trackplayer.offy}
+							anim.fromcam = anim.trackplayer and {x = anim.trackplayer.offx, y = anim.trackplayer.offy} or {x = cam.x, y = cam.y}
 							anim.tocam = {x = (tonumber(x) or 0) * scene.cellsize, y = (tonumber(y) or 0) * scene.cellsize}
 						end
+						break
 					end
 				end
 			end
@@ -18107,11 +18267,11 @@ function love.update(dt)
 			local lerp = math.min(1, anim.ltime / (anim.lerptotal * delay))
 			anim.lerpdebug = lerp
 			if not anim.trackplayer then
-				cam.x = anim.fromcam.x + anim.tocam.x * lerp
-				cam.y = anim.fromcam.y + anim.tocam.y * lerp
+				cam.x = (anim.fromcam.x or cam.x) + (anim.tocam.x or cam.x) * lerp
+				cam.y = (anim.fromcam.y or cam.y) + (anim.tocam.y or cam.y) * lerp
 			else
-				anim.trackplayer.offx = anim.fromcam.x + anim.tocam.x * lerp
-				anim.trackplayer.offy = anim.fromcam.y + anim.tocam.y * lerp
+				anim.trackplayer.offx = (anim.fromcam.x or cam.x) + (anim.tocam.x or cam.x) * lerp
+				anim.trackplayer.offy = (anim.fromcam.y or cam.y) + (anim.tocam.y or cam.y) * lerp
 			end
 		end
 	end
@@ -18679,6 +18839,22 @@ function DrawAdjustableMover(cell,cx,cy,crot,fancy,scale)
 	end
 end
 
+function DrawCenterNumber(n,cx,cy,fancy,scale)
+	if fancy and scale == 1 and rendercelltext then
+		local r,g,b,a = love.graphics.getColor()
+		love.graphics.setColor(0,0,0,a)
+		love.graphics.printf(n,cx-.475*cam.zoom,cy-.1*cam.zoom,40,"center",0,cam.zoom/40,cam.zoom/40)
+		love.graphics.setColor(r,g,b,a)
+		love.graphics.printf(n,cx-.5*cam.zoom,cy-.125*cam.zoom,40,"center",0,cam.zoom/40,cam.zoom/40)
+	elseif fancy and absolutedraw and rendercelltext then
+		local r,g,b,a = love.graphics.getColor()
+		love.graphics.setColor(0,0,0,a)
+		love.graphics.printf(n,cx-.475*20*scale,cy-.1*20*scale,40,"center",0,20*scale/40,20*scale/40)
+		love.graphics.setColor(r,g,b,a)
+		love.graphics.printf(n,cx-.5*20*scale,cy-.125*20*scale,40,"center",0,20*scale/40,20*scale/40)
+	end
+end
+
 function DrawPartialConverter(cell,cx,cy,crot,fancy,scale)
 	DrawStoredCell(cell,cx,cy,crot,fancy,scale)
 	if cell.vars[3] and cell.vars[4] and fancy and scale == 1 and cell.vars.paint ~= "s" and rendercelltext then
@@ -19215,6 +19391,7 @@ function DrawGrid()
 				cx,cy,crot = math.floor(force.x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(force.y*cam.zoom-cam.y+cam.zoom*.5+300*winym),force.dir*math.halfpi
 			end
 			DrawBasic(GetTex("force"..force.forcetype),cx,cy,crot,fancy,1,1,1)
+			DrawCenterNumber(force.bias,cx,cy,fancy,1)
 		end
 	end
 	love.graphics.setCanvas(gcanvas)
@@ -19369,13 +19546,14 @@ function DrawMainMenu()
 				recorddata.frame = recorddata.frame + 1
 				love.graphics.printf({
 					{1, 1, 1}, "Frame "..recorddata.frame.." ("..string.format("%.02f", recorddata.timer).."s)"
-							 .."\nGlobal tick ("..overallcount.."): "..ts, {0, 1, 1}, tm, {1, 1, 1}, te
-							 .."\nCamera {"..string.format("%.02f", cam.x)..", "..string.format("%.02f", cam.y).."}: "..cs, {0, 1, 1}, cm, {1, 1, 1}, ce
-							 .."\nController: "..i:sub(0, overallcount), {0, 1, 1}, i:sub(overallcount+1, overallcount+1), {1, 1, 1}, i:sub(overallcount+2, -1)
-							 .."\n"..string.format("%.02f%%", (recorddata.animation.lerpdebug or 0) * 100)
-							 .."\n"..(recorddata.debug or "")
+					.."\nGlobal tick ("..overallcount.."): "..ts, {0, 1, 1}, tm, {1, 1, 1}, te
+					.."\nCamera {"..string.format("%.02f", cam.x)..", "..string.format("%.02f", cam.y).."}: "..cs, {0, 1, 1}, cm, {1, 1, 1}, ce
+					.."\nController: "..i:sub(0, overallcount), {0, 1, 1}, i:sub(overallcount+1, overallcount+1), {1, 1, 1}, i:sub(overallcount+2, -1)
+					.."\n"..string.format("%.02f%%", (recorddata.animation.lerpdebug or 0) * 100)
+					.."\n"..(recorddata.debug or "")
 				}, 50, 50 + recorddata.canvas:getHeight(), settings.window_width - 100, "left")
 			else
+				recorddata.audio.start = recorddata.timer + 1/recorddata.animation.fps
 				love.graphics.print("Waiting...", 50, 50 + recorddata.canvas:getHeight())
 			end
 			if love.keyboard.isDown("tab") then love.timer.sleep(0.5) end
@@ -19575,7 +19753,7 @@ function DrawButtonInfo()
 	end
 end
 
-versiontxt = [[Version #r2.0.2#55aaff_ff00ffw1.2.1
+versiontxt = [[Version #r2.0.2#55aaff_ff00ffw1.3.0
 #xCelLua Machine Wiki Mod created by #ff0000_00ff00aadenboy
 #xOriginal CelLua Machine created by#00ff00_80ff80 KyYay
 #xOriginal Cell Machine by #40a0ff-80c0ffSam Hogan]]

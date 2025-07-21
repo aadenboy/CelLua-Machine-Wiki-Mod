@@ -1,12 +1,33 @@
 [board]
-  {level} ::K3\::;O;7;1;eNozMKAHsACT6enpBoGBgQYG2Y5AHohhoGGYA5YKNBimAABQ8EP1;::
-  {camera} 1 1
+  {level} ::K3:smots gaming:;1+;1g;1;eNrtmWFP2zAQhv9KpX1YpkmT08AAqdOGYB8mDYmhMm07NKnQ0BZKW0qAwfjxa5lKaezETmhKW573Q7b3TOL67t6zL/G+bYpf9nbvxFdSvvSg0OWlKjPwHxR9oA8oFH1AoegDCkUfUCj6gELRBxSKPqBQ9AGFog8oFH2gDyj6QB9QKPqAQtEHFDo7fcQEcgyFLhNVSAIKRRJQKJKAQpEEFIokoFAkAYUiCSgUSUChSAIKRRJQKJKAQudQEge+9+en+JWo2boo9Wr9qDT4N+p2Dw46J7XO6U3puhU1S1EzHPynU6+MxTG6cWgu1Y6iy1q7fVMKO/WLwa3dq7Bfaob9sILQoAiNvQcKnYokBvvOefTwnP+MAQYYYGBBBhTXPNeLXJvG1m+p9GqtTlR5s3K68eHVw8D+5/FA6+2dn8ew9c74cG/vaGwP7773DZZJU/Nv79BgmVjJ49Hu6199lQ/5XVltDvL50YJ/vN5P8nKR3tWd6eJd3TBcTmBczlT9XYzDp+FfZ4e7pe/9Qq9iP9fV5uZ3w++YehgSK4b2h3H/GeNi9Kk9O42OMLtmuLDL2CQmW6L/Ej3ura4NBsKo3zpuhfWKPwv/e1sfLaXEIUIZXJIacENYNGeZvae5zjy93aEuxW6aITB7w6veTpSis931r9qdbku2PM2rnojvT1YHy1aZHIWkXLB4Pr4S77w3/E3lQIJAVgJZ9eW9L2tK1pVsKKkpOfTlyJe6klDJsZKGkmZZWmU5KctpWdpKzpR0fOkq6Sk5V9JX48kbt5t7zDDVGfwlmGGO4zDFeqOX+6Ta4FKCVL6a43pIsZTe9GEv6D2a/dN275kMU90snGLiekf2rS6lY3JTQVC4zp40w8tLGb2TtB72Up6YmEBuA7EefF7CMYOAOTZB964PJl1vsrm0XRkjEq/PoyP+lX7GfkFhM0ghuat3b5R2tEZ3NN91plgbT+mOTWlGw31XrXXjqX13ypajH1OWOansr4qyHAJc+sKd5MdnqBd6RlQb+ju++PTxBtPwfitH/pkNhby2syZ1Ug43vsRyRzPMUw4nvEHZ3rRlilM2FxMaNyHZDz2mtyKOjY9d9fHbLJ8vRntwet4Vl+6zMbhq6Gw9lruaYY40ZD4gqdTynk9Rji31/MbfLskchsIqSLZ3wFdWwbuI2378sn/lWOAK4fy9QjfY992ZGNI+ZD11Q13k0j9fCZbhe3FqM2NXZOI3xpepUvvOPhNDXpUabvCi9rBTKysJnB433Ct2uRZyfYKb50aP2X/5QkbqWYo5AAAAAAAAAAAAAAAAAAAAAAAAADLiH9CoSzs=;::
+  {camera} 0 0
   {cellsize} 40
-  {capture} 7 5
+  {capture} 22 15
 
 [animation]
   {defaultspeed} 0.2
   {mode} ticks
   {fps} 30
-  {ticks}  0 -> 14 -> 15 -> 16 -> 17 -> 18 -> 19 -> 20 -> 21 -> 40
-  {camera} 0 -> 14 -> 0  -> 1  -> 0  -> 1  -> 0  -> 1  -> 0  -> 19
+  {samplerate} 44100
+  {channels} stereo
+  {ticks}  0 -> 135
+  {camera} 0 -> 0
+  {trackplayer} 2-125 31
+  {input} ::..4.51111151111111112222251111.621111111.2151122.22511111.62211111.221111.12..1.5111151111.6..22222512215111111.51111111151111....::
+
+[board]
+  {level} ::K3:smotsmare:;m;f;1;eNqLtUlKLy5ITE61MYgdZY4yacXU8HQFomHsQ4gHh7w3ER4oz89PgUhBWEPIa7g9MWQ8RpoXBqG3SPKAhnk+yR5ENp0+HkXJ39iDG1MJlkKBbq7F5s4YQ43CMkrSFQ7P0zl1haji9VwmTD2cQWuvpRclFhfT0GsD7ivKPEhCWZAYSHpZUJITbWgUbWQQbYwkmJkcbVOQmJlXYmPjYRBsEGZoYIAl72H3ItWYGubFRBeCPsSqDImH+UzTxNIp05wcGWhI4He8ZzY25IpqWIWr/+AVAJW9UIcDANUVbt8=;::
+  {camera} 0 0
+  {cellsize} 40
+  {capture} 22 15
+
+[animation]
+  {defaultspeed} 0.05
+  {mode} ticks
+  {fps} 30
+  {samplerate} 44100
+  {channels} stereo
+  {ticks}  0 -3> 1 -> 136 -3> 137
+  {camera} 0 -> 0 -> 0 -> 0
+  {trackplayer} 1 1
+  {input} ::...4.51111151111111112222251111.621111111.2151122.22511111.62211111.221111.12..1.5111151111.6..22222512215111111.51111111151111.....::

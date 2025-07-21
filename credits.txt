@@ -1,6 +1,6 @@
-CelLua Machine was created by KyYay.
-
-The original Cell Machine was created by Sam Hogan. This is a non-profit passion project that simply aims to add more content to the original idea.
+The original Cell Machine was created by Sam Hogan.
+CelLua is a non-profit passion project created by KyYay that simply aims to add more content to the original idea.
+CelLua Machine Wiki Mod is a modification of CelLua Machine to aid in documentation of the game for the CelLua Machine Wiki, created by aadenboy.
 
 The FontStruction “7:12 Serif Bold”
 (https://fontstruct.com/fontstructions/show/413598) by Christian Munk is
