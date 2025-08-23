@@ -63,23 +63,26 @@ function quanta.parse(str)
             if not strn:match("^%b<>") then errchar(at, "Unclosed modifier definition") end
             push(strn:match("^%b<>"):sub(2, -2), types.modifier, 2)
         elseif strn:sub(1, 1) == "@" then -- handle flags
-            local ah = strn:match("^@([^@%[%]{}<>%s]+)"):gsub("([-:])%1.*$", "") -- same as word pattern, plus the at symbol
+            local ah = strn:match("^@([^@%[{<%s]+)"):gsub("([-:])%1.*$", "") -- same as word pattern, plus the at symbol
             if not ah then push("@", types.word, 0); goto continue end -- can just be a word instead if invalid, not that critical
             push(ah, types.flag, 1)
         elseif strn:sub(1, 2) == "--" then -- comment handling
-            local at2 = 3
             -- case where there's no strings in the line
-            if not (strn:match("^%-%-(.-)\n") or ""):match("::") then at = at + (strn:match("^%-%-.-()\n") or #strn); goto continue end
-            while strn:sub(at2):match("^.-::.-\n") do -- otherwise...
-                local set = strn:sub(at2)
-                local first = set:match("()::") -- find the first string
-                local from, to = set:sub(first):gsub("\\.", "__"):match("^::().-()::") -- same method as before
-                if not from then errchar(at, "Unclosed block comment string") end
-                table.insert(aliases, set:sub(from, to))
-                at2 = at2 + to + 2 -- this time we keep going
-            end
-            at2 = at2 + #(strn:sub(at2):match("^(.-)\n") or "") -- final case
-            at = at + at2
+            if not (strn:match("^%-%-[^\n]+") or ""):match("::") then at = at + (strn:match("()\n") or #strn)
+            else
+	            local at2 = 1
+	            while strn:sub(at2):match("^[^\n]-::") do -- otherwise...
+	                local set = strn:sub(at2)
+	                local first = set:match("()::") -- find the first string
+	                local from, to = set:sub(first):gsub("\\.", "__"):match("^::().-()::") -- same method as before
+	                if not from then errchar(at, "Unclosed block comment string") end -- lmao now that I think about it this is a funny error message
+	                table.insert(aliases, set:sub(first, first+to))
+	                at2 = at2 + first + to -- this time we keep going
+	            end
+	            local final = strn:sub(at2):match("^[^\n]+") or ""
+	            at2 = at2 + #final -- final case
+	            at = at + at2 - 1
+	        end
         else -- handle words
             local word = (strn:match("^([^@%[{<%s]+)") or ""):gsub("([-:])%1.*$", "") -- matches up until any special characters, then trim off the start of a string or comment
             if #word > 0 then push(word, types.word, 0) end
@@ -88,11 +91,22 @@ function quanta.parse(str)
     until at >= #str
 
     local function parsetype(thing)
-            if thing == "true" or thing == "false" then return thing == true
+        local hex = "[0-9a-fA-F]"
+            if thing == "true" or thing == "false" then return thing == "true"
         elseif thing == "none" then return nil
         elseif thing:match("^%$.-;$") then
             local a = thing:match("%$(.-);")
             return aliases[tonumber(a) or a] -- compatibility
+        elseif thing:match("^#"..hex:rep(4).."?$")     -- #rgb(a)
+            or thing:match("^#"..hex:rep(6).."$")      -- #rrggbb
+            or thing:match("^#"..hex:rep(8).."$") then -- #rrggbbaa
+            h = thing:sub(1, 1) == "#" and thing:sub(2, -1) or thing
+            h = h:lower()
+            local vals = {}
+            for i=1, #h, #h < 6 and 1 or 2 do
+                vals[#vals+1] = tonumber(string.rep(string.sub(h, i, #h < 6 and i or i + 1), #h < 6 and 2 or 1), 16)
+            end
+            return {vals[1] / 255, vals[2] / 255, vals[3] / 255, (vals[4] or 255) / 255}
         elseif thing:match("^%-?%d-%.?%d+$")                     -- base 10
             or thing:match("^%-?0x[0-9a-fA-F]-%.?[0-9a-fA-F]+$") -- base 16
             or thing:match("^%-?0b[01]-%.?[01]+$")               -- base 2
@@ -233,7 +247,7 @@ function quanta.parse(str)
                 table.insert(build, current)
             end
             local after = (tokens[tid] or {})
-            if after.type == types.word and after.token:match("^!") then -- object ids?!
+            if after.type == types.word then -- object ids?!
                 getmetatable(current).__id = after.token
                 collectids[after.token] = current
                 tid = tid + 1
@@ -284,8 +298,12 @@ function quanta.parse(str)
             end
         end
     until tid >= #tokens
+    local exact = {}
+    for i,v in pairs(collection) do
+        exact[i] = v[#v]
+    end
 
-    return build, collection, collectids
+    return build, exact, collection, collectids
 end
 
 return quanta

@@ -6877,6 +6877,7 @@ function CreateMenu()
 		or sceneboard.capture[1] < 1
 		or sceneboard.capture[2] < 1
 		or type(sceneanimation.defaultspeed) ~= "number"
+		or (sceneanimation.cellposition ~= nil and sceneanimation.cellposition ~= "aliased" and sceneanimation.cellposition ~= "antialiased")
 		or type(sceneanimation.fps) ~= "number"
 		or type(sceneanimation.ticks) ~= "table"
 		or #sceneanimation.ticks < 3
@@ -6897,7 +6898,7 @@ function CreateMenu()
 			scene = sceneboard,
 			animation = sceneanimation,
 			canvas = love.graphics.newCanvas(sceneboard.capture[1] * sceneboard.cellsize, sceneboard.capture[2] * sceneboard.cellsize),
-			current = 1,
+			current = 0,
 			timer = 0,
 			next = 0,
 			frame = 1,
@@ -18134,7 +18135,7 @@ function love.update(dt)
 	end
 	postloading = true
 	ip.Update(dt)
-	if not paused and not mainmenu then
+	if not paused and not mainmenu and (recorddata.initialrecorded or not recording) then
 		local scene = recorddata.scene
 		local anim = recorddata.animation
 		dtime = dtime + dt
@@ -18151,7 +18152,7 @@ function love.update(dt)
 				for i=#anim.ticks, 1, -2 do
 					local value = anim.ticks[i]
 					local transition = anim.ticks[i+1]
-					if value <= overallcount then
+					if value <= overallcount and recorddata.current ~= i then
 						local camvalue = anim.camera and tostring(anim.camera[i+2])
 						local length = 0
 						recorddata.current = i
@@ -18236,8 +18237,7 @@ function love.update(dt)
 
 							goto notick
 						end
-						anim.lerpstart = value + 1
-						recorddata.next = recorddata.timer + length
+
 						if camvalue and (camvalue:match("^[%+%-]?i$") or camvalue:match("^[%+%-]?%d*%.?%d+i?$") or camvalue:match("^[%+%-]?%d*%.?%d+[%+%-]%d*%.?%d*i$")) then
 							if not anim.trackplayer and anim.tocam then
 								cam.x = (anim.fromcam.x or cam.x) + (anim.tocam.x or 0)
@@ -19194,13 +19194,14 @@ function DrawCell(cell,x,y,interpolate,alpha,scale,meta)
 	local lerp = itime/delay
 	interpolate = interpolate
 	if not forcespread[cell.vars.forceinterp] then cell.vars.forceinterp = nil end
+	local floor = (recording and recorddata.animation.cellposition == "aliased") and (function(x) return x end) or math.floor
 	if cell.vars.forceinterp then
 		local force = forcespread[cell.vars.forceinterp]
-		cx,cy,crot = math.floor(force.x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(force.y*cam.zoom-cam.y+cam.zoom*.5+300*winym),force.rot*math.halfpi
+		cx,cy,crot = floor(force.x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),floor(force.y*cam.zoom-cam.y+cam.zoom*.5+300*winym),force.rot*math.halfpi
 	elseif interpolate then
-		cx,cy,crot = math.floor(math.graphiclerp(cell.lastvars[1],x,lerp)*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(math.graphiclerp(cell.lastvars[2],y,lerp)*cam.zoom-cam.y+cam.zoom*.5+300*winym),math.graphiclerp(cell.rot-cell.lastvars[3],cell.rot,lerp)*math.halfpi%(math.pi*2)
+		cx,cy,crot = floor(math.graphiclerp(cell.lastvars[1],x,lerp)*cam.zoom-cam.x+cam.zoom*.5+400*winxm),floor(math.graphiclerp(cell.lastvars[2],y,lerp)*cam.zoom-cam.y+cam.zoom*.5+300*winym),math.graphiclerp(cell.rot-cell.lastvars[3],cell.rot,lerp)*math.halfpi%(math.pi*2)
 	else
-		cx,cy,crot = math.floor(x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(y*cam.zoom-cam.y+cam.zoom*.5+300*winym),cell.rot*math.halfpi
+		cx,cy,crot = floor(x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),floor(y*cam.zoom-cam.y+cam.zoom*.5+300*winym),cell.rot*math.halfpi
 	end
 	local canv = love.graphics.getCanvas()
 	scale,alpha = scale or 1,alpha or 1
@@ -19211,7 +19212,7 @@ function DrawCell(cell,x,y,interpolate,alpha,scale,meta)
 	end
 	if cell.id ~= 0 and cell.vars.paint ~= "I" then 
 		local fancy = fancy
-		if x == math.floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom) and y == math.floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom) then
+		if x == floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom) and y == floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom) then
 			fancy = true
 		end
 		love.graphics.setColor(1,1,1,alpha)
@@ -19385,10 +19386,11 @@ function DrawGrid()
 			local x,y,rot = force.x, force.y, force.rot
 			local cx,cy,crot
 			local lerp = itime/delay
+			local floor = (recording and recorddata.animation.cellposition == "aliased") and (function(x) return x end) or math.floor
 			if true then
-				cx,cy,crot = math.floor(math.graphiclerp(force.lx,force.x,lerp)*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(math.graphiclerp(force.ly,force.y,lerp)*cam.zoom-cam.y+cam.zoom*.5+300*winym),math.graphiclerp(force.ldir,force.dir,lerp)*math.halfpi%(math.pi*2)
+				cx,cy,crot = floor(math.graphiclerp(force.lx,force.x,lerp)*cam.zoom-cam.x+cam.zoom*.5+400*winxm),floor(math.graphiclerp(force.ly,force.y,lerp)*cam.zoom-cam.y+cam.zoom*.5+300*winym),math.graphiclerp(force.ldir,force.dir,lerp)*math.halfpi%(math.pi*2)
 			else
-				cx,cy,crot = math.floor(force.x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(force.y*cam.zoom-cam.y+cam.zoom*.5+300*winym),force.dir*math.halfpi
+				cx,cy,crot = floor(force.x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),floor(force.y*cam.zoom-cam.y+cam.zoom*.5+300*winym),force.dir*math.halfpi
 			end
 			DrawBasic(GetTex("force"..force.forcetype),cx,cy,crot,fancy,1,1,1)
 			DrawCenterNumber(force.bias,cx,cy,fancy,1)
@@ -19541,7 +19543,8 @@ function DrawMainMenu()
 					cm = cm..v.." "
 				end
 			end
-			if overallcount > 0 then
+			if overallcount > 0 or not recorddata.initialrecorded then
+				recorddata.initialrecorded = true
 				recorddata.canvas:newImageData():encode("png", "recording/"..recorddata.frame..".png")
 				recorddata.frame = recorddata.frame + 1
 				love.graphics.printf({
@@ -19753,7 +19756,7 @@ function DrawButtonInfo()
 	end
 end
 
-versiontxt = [[Version #r2.0.2#55aaff_ff00ffw1.3.0
+versiontxt = [[Version #r2.0.2#55aaff_ff00ffw1.3.1
 #xCelLua Machine Wiki Mod created by #ff0000_00ff00aadenboy
 #xOriginal CelLua Machine created by#00ff00_80ff80 KyYay
 #xOriginal Cell Machine by #40a0ff-80c0ffSam Hogan]]
