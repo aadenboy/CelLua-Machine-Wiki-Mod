@@ -2060,6 +2060,8 @@ function MakeTextures()
 	NewTex("logo","logo")
 	NewTex("exportimage","exportimage")
 	NewTex("rendertext","rendertext")
+	NewTex("renderempty","renderempty")
+	NewTex("renderbg","renderbg")
 	NewTex("countcells","countcells")
 	NewTex("record","recordvideo")
 	NewTex("inputrecord","recordinput")
@@ -4538,6 +4540,8 @@ function ReadSavedVars()
 			fancy = true,
 			fancywm = true,
 			rendertext = true,
+			renderempty = false,
+			renderbg = false,
 			moreui = true,
 			popups = true,
 			playercam = true;
@@ -4586,6 +4590,8 @@ function ReadSavedVars()
 	fancy = settings.fancy
 	fancywm = settings.fancywm
 	rendertext = settings.rendertext
+	renderempty = settings.renderempty
+	renderbg = settings.renderbg
 	moreui = settings.moreui
 	popups = settings.popups
 	playercam = settings.playercam
@@ -6799,13 +6805,18 @@ function CreateMenu()
 	NewButton(120,20,40,40,14,"undobtn","Undo (Ctrl+Z)",nil,Undo,false,function() return moreui and not mainmenu and #undocells > 0 and not puzzle end,"topright",0,math.pi)
 	NewButton(20,function() return level and 20 or 70 end,40,40,11,"resetlvl","Reset (Ctrl+R)",nil,function() RefreshWorld(); Play("beep") end,false,function() return not isinitial and moreui and not mainmenu end,"topright",0)
 	NewButton(function() return moreui and 70 or 20 end,function() return moreui and 70 or 20 end,40,40,146,"setinitial","Set Initial","Sets the initial state to the current state.",SetInitial,false,function() return not isinitial and not puzzle and not mainmenu end,"topright",0)
-	local menubg = NewButton(0,-10,400,320,"px","menubg",nil,nil,function() end,false,function() return (inmenu or winscreen or wikimenu) and not mainmenu end,"center",1999,nil,{1,1,1,0},{1,1,1,0},{1,1,1,0})
+	local menubg = NewButton(0,-10,400,320,"px","menubg",nil,nil,function() end,false,function() return (inmenu or winscreen) and not wikimenu and not mainmenu end,"center",1999,nil,{1,1,1,0},{1,1,1,0},{1,1,1,0})
 	menubg.drawfunc = function(x,y,b)
 		MenuRect(x-200*uiscale,y-160*uiscale,400*uiscale,320*uiscale)
+	end
+	local exportmenubg = NewButton(0,-10,200,200,"px","exportmenubg",nil,nil,function() end,false,function() return wikimenu == "export" end,"center",1999,nil,{1,1,1,0},{1,1,1,0},{1,1,1,0})
+	exportmenubg.drawfunc = function(x,y,b)
+		MenuRect(x-100*uiscale,y-100*uiscale,200*uiscale,200*uiscale)
 	end
 	NewButton(-150,100,40,40,2,"closemenu","Close Menu",nil,function() inmenu = false Play("beep") end,false,bactive,"center",2000)
 	NewButton(-100,100,40,40,11,"resetlvlmenu","Reset Level","Also resizes the world to the values specified above in Sandbox Mode.",function() RefreshWorld(); Play("beep") end,false,bactive,"center",2000)
 	NewButton(-50,100,40,40,9,"resetpuzzlemenu","Reset Puzzle","Resets the puzzle to how it was in the beginning.",function() level = level - 1; NextLevel() end,false,function() return level and inmenu and not mainmenu end,"center",2000)
+	NewButton(100,100,40,40,"pencil","editpuzzlemenu","Edit Puzzle","Opens the puzzle in Sandbox Mode.",function() ToggleHud(true); inmenu = false; puzzle = false; level = nil end,false,function() return level and inmenu and not mainmenu end,"center",2000)
 	NewButton(-50,100,40,40,12,"clearlvl","Clear Level","Also resizes the world to the values specified above.",function() title,subtitle = "",""; ClearWorld() Play("beep") end,false,strictbactive,"center",2000)
 	NewButton(0,100,40,40,3,"savelvl","Save Level","Saves to clipboard.\nNote: Saves the#ffff80 initial#x state, not the current state.\nFormat: K3",SaveWorld,false,strictbactive,"center",2000, -math.halfpi)
 	NewButton(50,100,40,40,"pencil","loadlvl","Load & Edit Level","Fetches from clipboard.\nLoads V3 and K1-K3 codes.",function() LoadWorld(); ToggleHud(true); puzzle = false end,false,strictbactive,"center",2000)
@@ -6823,10 +6834,14 @@ function CreateMenu()
 	NewButton(-25,25,20,20,function(b) return "subtick"..subticking end,"subtickbtn","Subticking",function(b) return "Controls how ticks are displayed.\nCurrently: "..({[0] = "Full ticks", "Subticks", "Subsubticks (individual cells)", "Force propagation"})[subticking] end,function(b) subticking = (subticking + 1) % 4 SetEnabledColors(b,subticking > 0,true) end,false,optionbactive,"center",2000,nil,{.5,.5,.5,1},{.75,.75,.75,1},{.25,.25,.25,1})
 	local b = NewButton(25,25,20,20,"fancy","fancybtn","Fancy Graphics",nil,function(b) settings.fancy = not fancy; fancy = settings.fancy; SetEnabledColors(b,fancy,true) end,false,optionbactive,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
 	SetEnabledColors(b,fancy,true)
-	local b = NewButton(12.5,25,20,20,"fancy","fancybtnwmexport","Fancy Graphics","Toggle whether or not to export as if #rFancy Graphics#x is enabled",function(b) settings.fancywm = not fancywm; fancywm = settings.fancywm; SetEnabledColors(b,fancywm,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
+	local b = NewButton(-37.5,10,20,20,"fancy","fancybtnwmexport","Fancy Graphics","Toggle whether or not to export as if #rFancy Graphics#x is enabled",function(b) settings.fancywm = not fancywm; fancywm = settings.fancywm; SetEnabledColors(b,fancywm,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
 	SetEnabledColors(b,fancywm,true)
-	local b = NewButton(-12.5,25,20,20,"rendertext","rendertextbtn","Render Text","Toggle whether or not to render text shown on cells, like #ffff00Coin#x counts",function(b) settings.rendertext = not rendertext; rendertext = settings.rendertext; SetEnabledColors(b,rendertext,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
+	local b = NewButton(-12.5,10,20,20,"rendertext","rendertextbtn","Render Text","Toggle whether or not to render text shown on cells, like #ffff00Coin#x counts",function(b) settings.rendertext = not rendertext; rendertext = settings.rendertext; SetEnabledColors(b,rendertext,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
 	SetEnabledColors(b,rendertext,true)
+	local b = NewButton(12.5,10,20,20,"renderempty","renderemptybtn","Render Empty","Toggle whether or not to render empty space.",function(b) settings.renderempty = not renderempty; renderempty = settings.renderempty; SetEnabledColors(b,renderempty,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
+	SetEnabledColors(b,renderempty,true)
+	local b = NewButton(37.5,10,20,20,"renderbg","renderbgbtn","Render Background","Toggle whether or not to render the background.",function(b) settings.renderbg = not renderbg; renderbg = settings.renderbg; SetEnabledColors(b,renderbg,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
+	SetEnabledColors(b,renderbg,true)
 	local b = NewButton(-50,25,20,20,"bigui","moreuibtn","Minimalist UI",nil,function(b) settings.moreui = not moreui; moreui = settings.moreui; SetEnabledColors(b,not moreui,true) end,false,optionbactive,"center",2000,nil,{.5,.5,.5,1},{.75,.75,.75,1},{.25,.25,.25,1})
 	SetEnabledColors(b,not moreui,true)
 	local b = NewButton(50,25,20,20,"playercam","playercam","Player-Centered Camera",nil,function(b) settings.playercam = not playercam; playercam = settings.playercam; SetEnabledColors(b,playercam,true) end,false,optionbactive,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
@@ -6850,48 +6865,57 @@ function CreateMenu()
 	NewButton(20,20,40,40,"delete","closegame","Quit Game",nil,function() love.event.quit() end,false,function() return mainmenu == "title" end,"topright",3001,nil,{1,.5,.5,.5},{1,.5,.5,1},{.5,.25,.25,1})
 	NewButton(0,-100,150,75,"pix","logosecret",nil,nil,function() ToMenu("secret"); typedcode = ""; Play("beep") end,false,titlemenu,"center",3000,nil,{0,0,0,0},{0,0,0,0},{0,0,0,0})
 	NewButton(0,100,40,40,3,"savelvl","Save Level","Saves to clipboard.\nNote: Saves the#ffff80 initial#x state, not the current state.\nFormat: K3",SaveWorld,false,strictbactive,"center",2000, -math.halfpi)
-	NewButton(-75,62,50,25,"pix","cellsizebtn",nil,nil,function() if not puzzle then typing = "cellsize" end end,false,wmexport,"center",2000,nil,{.25,.25,.25,1},{.25,.25,.25,1},{.25,.25,.25,1})
-	NewButton(75,62,50,25,"pix","paddingtbtn",nil,nil,function() if not puzzle then typing = "padding" end end,false,wmexport,"center",2000,nil,{.25,.25,.25,1},{.25,.25,.25,1},{.25,.25,.25,1})
-	NewButton(-30,100,40,40,3,"exportconfirm","Export Image","Exports your selection as an image in your save directory and opens it\nNote: If the image is larger than "..graphicsmax.."x"..graphicsmax.." or you have no selection, exporting will fail",ExportImage,false,wmexport,"center",2000,math.halfpi)
+	NewButton(-50,-32,50,25,"pix","cellsizebtn",nil,nil,function() if not puzzle then typing = "cellsize" end end,false,wmexport,"center",2000,nil,{.25,.25,.25,1},{.25,.25,.25,1},{.25,.25,.25,1})
+	NewButton(50,-32,50,25,"pix","paddingtbtn",nil,nil,function() if not puzzle then typing = "padding" end end,false,wmexport,"center",2000,nil,{.25,.25,.25,1},{.25,.25,.25,1},{.25,.25,.25,1})
+	NewButton(30,55,40,40,3,"exportconfirm","Export Image","Exports your selection as an image in your save directory and opens it\nNote: If the image is larger than "..graphicsmax.."x"..graphicsmax.." or you have no selection, exporting will fail",ExportImage,false,wmexport,"center",2000,math.halfpi)
+	NewButton(-30,55,40,40,146,"exportlegacyconfirm","Export Image (Legacy)","Exports your selection as an image in your save directory and opens it.\nThis uses the legacy renderer, which does not render the background, empty space, or certain visual elements properly.\nNote: If the image is larger than "..graphicsmax.."x"..graphicsmax.." or you have no selection, exporting will fail",ExportImageOLD,false,wmexport,"center",2000,math.halfpi)
 	NewButton(270,70,40,40,"countcells","countcellsbtn","Count Cells",nil,UpdateCount,false,mbleandnopuz,"topleft",0)
 	NewButton(270,120,40,40,"recordvideo","recordvideobtn","Record video","Takes a video data file from your clipboard and records each frame as an image into your save directory. See CelLua Machine Wiki Mod\\#Recording.",function()
 		local ds = love.system.getClipboardText()
-		local data, data2, data3
+		local data, data2
 		local succ, err = pcall(function()
-			data, data2, data3 = quanta.parse(ds)
+			data, data2 = quanta.parse(ds)
 		end)
-		if not succ or not data or #data == 0 then Play("destroy") return end
-		local sceneboard = (data2.board or {})[1]
-		local sceneanimation = (data2.animation or {})[1]
-		if not sceneboard or not sceneanimation then Play("destroy") return end
-		if type(sceneboard.level) ~= "string"
-		or type(sceneboard.camera) ~= "table"
-		or type(sceneboard.camera[1]) ~= "number"
-		or type(sceneboard.camera[2]) ~= "number"
-		or type(sceneboard.cellsize) ~= "number"
-		or sceneboard.cellsize < 1
-		or sceneboard.cellsize > 1000 -- please don't do this
-		or type(sceneboard.capture) ~= "table"
-		or type(sceneboard.capture[1]) ~= "number"
-		or type(sceneboard.capture[2]) ~= "number"
-		or sceneboard.capture[1] < 1
-		or sceneboard.capture[2] < 1
-		or type(sceneanimation.defaultspeed) ~= "number"
-		or (sceneanimation.cellposition ~= nil and sceneanimation.cellposition ~= "aliased" and sceneanimation.cellposition ~= "antialiased")
-		or type(sceneanimation.fps) ~= "number"
-		or type(sceneanimation.ticks) ~= "table"
-		or #sceneanimation.ticks < 3
-		or #sceneanimation.ticks % 2 ~= 1
-		or (type(sceneanimation.camera) ~= "table" and type(sceneanimation.camera) ~= "nil")
-		or (type(sceneanimation.camera) == "table" and #sceneanimation.camera ~= #sceneanimation.ticks)
-		or (type(sceneanimation.trackplayer) ~= "table" and type(sceneanimation.trackplayer) ~= "nil")
-		or (type(sceneanimation.trackplayer) == "table" and (
+		local function fail(s)
+			Play("destroy")
+			title = "#ff0000Something went wrong trying to load the recording."
+			subtitle = "#ff0000"..s
+			SetRichText(lvltitle,title,1000,"center")
+			SetRichText(lvldesc,subtitle,300,"center")
+		end
+		if not succ then fail(err) return end
+		if not data or #data == 0 then fail("no data provided") return end
+		local sceneboard = data2.board
+		local sceneanimation = data2.animation
+		-- BEHOLD: THE ERROR SMÖRGÅSBORD!!
+		if not sceneboard or not sceneanimation then fail("[board] and or [animation] is missing") return end
+		if type(sceneboard.level) ~= "string" then fail("invalid level code") return end
+		if type(sceneboard.camera) ~= "table" then fail("{camera} must be a position") return end
+		if type(sceneboard.camera[1]) ~= "number" then fail("{camera} X must be a number") return end
+		if type(sceneboard.camera[2]) ~= "number" then fail("{cmaera} Y must be a number") return end
+		if type(sceneboard.cellsize) ~= "number" then fail("{cellsize} must be a number") return end
+		if sceneboard.cellsize < 1 then fail("{cellsize} must be greater than 0") return end
+		if sceneboard.cellsize > 1000 then fail("{cellsize} must be less than or equal to 1000") return end
+		if type(sceneboard.capture) ~= "table" then fail("{capture} must be a size") return end
+		if type(sceneboard.capture[1]) ~= "number" then fail("{capture} X must be a number") return end
+		if type(sceneboard.capture[2]) ~= "number" then fail("{capture} Y must be a number") return end
+		if sceneboard.capture[1] < 1 then fail("{capture} X must be greater than 0") return end
+		if sceneboard.capture[2] < 1 then fail("{capture} Y must be greater than 0") return end
+		if type(sceneanimation.defaultspeed) ~= "number" then fail("{defaultspeed} must be a number") return end
+		if (sceneanimation.cellposition ~= nil and sceneanimation.cellposition ~= "aliased" and sceneanimation.cellposition ~= "antialiased") then fail("{cellposition} must be nil, 'aliased' or 'antialiased'") return end
+		if type(sceneanimation.fps) ~= "number" then fail("{fps} must be a number") return end
+		if type(sceneanimation.ticks) ~= "table" then fail("{ticks} must be an array") return end
+		if #sceneanimation.ticks < 3 then fail("{ticks} must have three values") return end
+		if #sceneanimation.ticks % 2 ~= 1 then fail("{ticks} must be a multiple of 2, plus one") return end
+		if (type(sceneanimation.camera) ~= "table" and type(sceneanimation.camera) ~= "nil") then fail("{camera} must be nil or an array") return end
+		if (type(sceneanimation.camera) == "table" and #sceneanimation.camera ~= #sceneanimation.ticks) then fail("{camera} must match length of {ticks}") return end
+		if (type(sceneanimation.trackplayer) ~= "table" and type(sceneanimation.trackplayer) ~= "nil") then fail("{trackplayer} must be nil or array") return end
+		if (type(sceneanimation.trackplayer) == "table" and (
 			type(sceneanimation.trackplayer[1]) ~= "number" and (type(sceneanimation.trackplayer[1]) ~= "string" or not sceneanimation.trackplayer[1]:match("%d+%-%d+"))
 		) and (
 			type(sceneanimation.trackplayer[2]) ~= "number" and (type(sceneanimation.trackplayer[2]) ~= "string" or not sceneanimation.trackplayer[2]:match("%d+%-%d+"))
-		))
-		or (type(sceneanimation.samplerate) ~= "number" and type(sceneanimation.samplerate) ~= "nil")
-		then Play("destroy") return end
+		)) then fail("{trackplayer} was formatted incorrectly") return end
+		if (type(sceneanimation.samplerate) ~= "number" and type(sceneanimation.samplerate) ~= "nil") then fail("{samplerate} must be nil or a number") return end
 		if not LoadWorld(sceneboard.level) then return end
 		RefreshWorld()
 		recorddata = {
@@ -7293,7 +7317,7 @@ function UpdateCount()
 	end
 end
 
-function ExportImage()
+function ExportImageOLD()
 	local newpadding = newpadding / 100
 	local cwidth, cheight = newcellsize*selection.w - newpadding*newcellsize*2, newcellsize*selection.h - newpadding*newcellsize*2
 	if cwidth <= 0 or cwidth > graphicsmax or cheight <= 0 or cheight > graphicsmax then Play("destroy") return end
@@ -7330,6 +7354,51 @@ function ExportImage()
 	Play("beep")
 	canvas:newImageData():encode("png", "export.png")
 	love.system.openURL("file://"..love.filesystem.getSaveDirectory().."/export.png")
+end
+
+function ExportImage() -- it's easier just to reuse the system already in place
+	local width, height = selection.w - newpadding/100*2, selection.h - newpadding/100*2
+	if width <= 0 or width > graphicsmax or height <= 0 or height > graphicsmax then Play("destroy") return end
+	inmenu = false
+	wikimenu = nil
+	fancy = fancywm
+	rendercelltext = rendertext
+	recorddata = {
+		scene = {
+			camera = {selection.x+(newpadding/100), selection.y+(newpadding/100)},
+			cellsize = newcellsize,
+			capture = {width, height}
+		},
+		animation = {
+			defaultspeed = 0,
+			fps = 1,
+			ticks = {0, "-0/0>", 0},
+			usinginput = false,
+			input = "",
+			ltime = 0
+		},
+		canvas = love.graphics.newCanvas(width * newcellsize, height * newcellsize),
+		current = 0,
+		timer = 0,
+		next = 0,
+		frame = 1,
+		audio = {
+			buffer = {},
+			playing = {}
+		},
+		imageexport = true
+	}
+	recording = true
+	cam.x = recorddata.scene.camera[1] * recorddata.scene.cellsize
+	cam.y = recorddata.scene.camera[2] * recorddata.scene.cellsize
+	cam.zoom = recorddata.scene.cellsize
+	cam.tarx = cam.x * recorddata.scene.cellsize
+	cam.tary = cam.y * recorddata.scene.cellsize
+	cam.tarzoom = cam.zoom
+	TogglePause(false)
+
+	fancy = settings.fancy
+	rendercelltext = true
 end
 
 queue = {}
@@ -18152,7 +18221,7 @@ function love.update(dt)
 				for i=#anim.ticks, 1, -2 do
 					local value = anim.ticks[i]
 					local transition = anim.ticks[i+1]
-					if value <= overallcount and recorddata.current ~= i then
+					if value <= overallcount and recorddata.current < i then
 						local camvalue = anim.camera and tostring(anim.camera[i+2])
 						local length = 0
 						recorddata.current = i
@@ -18175,7 +18244,8 @@ function love.update(dt)
 						else
 							delay = 0.2
 							tpu = 1
-							LoadWorld(scene.level)
+							if not recorddata.imageexport then LoadWorld(scene.level)
+							else Play("beep"); love.system.openURL("file://"..love.filesystem.getSaveDirectory().."/export.png"); TogglePause(true) end
 							recording = false
 							love.resize()
 							
@@ -18270,8 +18340,8 @@ function love.update(dt)
 				cam.x = (anim.fromcam.x or cam.x) + (anim.tocam.x or cam.x) * lerp
 				cam.y = (anim.fromcam.y or cam.y) + (anim.tocam.y or cam.y) * lerp
 			else
-				anim.trackplayer.offx = (anim.fromcam.x or cam.x) + (anim.tocam.x or cam.x) * lerp
-				anim.trackplayer.offy = (anim.fromcam.y or cam.y) + (anim.tocam.y or cam.y) * lerp
+				anim.trackplayer.offx = (anim.fromcam.x or 0) + (anim.tocam.x or 0) * lerp
+				anim.trackplayer.offy = (anim.fromcam.y or 0) + (anim.tocam.y or 0) * lerp
 			end
 		end
 	end
@@ -18313,7 +18383,7 @@ function love.update(dt)
 	if (love.mouse.isDown(1) or love.mouse.isDown(2) or love.mouse.isDown(3)) and hoveredbutton and hoveredbutton.ishold then
 		hoveredbutton.onclick(hoveredbutton)
 	end
-	if love.mouse.isDown(1) and chosen.id ~= 0 and not hoveredbutton and not puzzle and placecells then
+	if love.mouse.isDown(1) and chosen.id ~= 0 and not hoveredbutton and not puzzle and placecells and not recording then
 		local x = math.floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom)
 		local y = math.floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom)
 		for cy=y-math.ceil(chosen.size*.5)+(chosen.shape == "Square" and 1 or 0),y+math.floor(chosen.size*.5) do
@@ -18344,14 +18414,14 @@ function love.update(dt)
 				end
 			end
 		end	
-	elseif love.mouse.isDown(1) and not hoveredbutton and not puzzle and selection.on then
+	elseif love.mouse.isDown(1) and not hoveredbutton and not puzzle and selection.on and not recording then
 		local x = math.floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom)
 		local y = math.floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom)
 		selection.x = math.min(x,selection.ox)
 		selection.y = math.min(y,selection.oy)
 		selection.w = math.max(selection.ox-selection.x + 1,x-selection.x + 1)
 		selection.h = math.max(selection.oy-selection.y + 1,y-selection.y + 1)
-	elseif (love.mouse.isDown(2) or love.mouse.isDown(1) and chosen.id == 0) and not hoveredbutton and not puzzle and placecells then
+	elseif (love.mouse.isDown(2) or love.mouse.isDown(1) and chosen.id == 0) and not hoveredbutton and not puzzle and placecells and not recording then
 		local x = math.floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom)
 		local y = math.floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom)
 		for cy=y-math.ceil(chosen.size*.5)+(chosen.shape == "Square" and 1 or 0),y+math.floor(chosen.size*.5) do
@@ -19319,7 +19389,6 @@ function GetDrawBounds(off, bg)
 		"rightdown"
 	end
 end
-
 	
 CELLCOL = {1,1,1}
 function DrawGrid()
@@ -19337,8 +19406,8 @@ function DrawGrid()
 	love.graphics.setColor(CELLCOL)
 	local startx,endx,starty,endy = GetDrawBounds(1, true)
 	local gcanvas = recording and recorddata.canvas or nil
-	love.graphics.setCanvas(gcanvas)
-	if recording then love.graphics.clear(voidcolor) end
+ 	love.graphics.setCanvas(gcanvas)
+	if recording then love.graphics.clear(recorddata.imageexport and renderbg and voidcolor or {0,0,0,0}) end
 	for y=starty,endy do
 		for x=startx,endx do
 			local p = GetPlaceable(x,y) or 0
@@ -19350,7 +19419,7 @@ function DrawGrid()
 					local cx,cy = math.floor(x*cam.zoom-cam.x+400*winxm)+.49,math.floor(y*cam.zoom-cam.y+300*winym)+.49
 					love.graphics.rectangle("fill",cx,cy,cam.zoom,cam.zoom)
 				end
-			elseif (cam.zoom > 8 or p ~= 0) then
+			elseif cam.zoom > 8 or not recording or not recorddata.imageexport or renderempty or p ~= 0 then
 				love.graphics.setColor(CELLCOL)
 				local cx,cy = math.floor(x*cam.zoom-cam.x+cam.zoom*.5+400*winxm)+.49,math.floor(y*cam.zoom-cam.y+cam.zoom*.5+300*winym)+.49
 				local pt = {id=p}
@@ -19448,11 +19517,11 @@ function DrawGrid()
 		end
 		love.graphics.setColor(1,1,1,.25)
 		love.graphics.rectangle("fill",(mx-.5)*cam.zoom-cam.x+cam.zoom*.5+400*winxm,(my-.5)*cam.zoom-cam.y+cam.zoom*.5+300*winym,#copied[0][0]*cam.zoom+cam.zoom,#copied[0]*cam.zoom+cam.zoom)
-	elseif selection.on then
+	elseif selection.on and not recording then
 		love.graphics.setColor(1,1,1,.25)
 		local cx,cy = math.floor((selection.x-.5)*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor((selection.y-.5)*cam.zoom-cam.y+cam.zoom*.5+300*winym)
 		love.graphics.rectangle("fill",cx,cy,selection.w*cam.zoom,selection.h*cam.zoom)
-	elseif not hoveredbutton and not puzzle then
+	elseif not hoveredbutton and not puzzle and not recording then
 		local mx = math.floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom)
 		local my = math.floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom)
 		local cell = GetPlacedCell({id=chosen.id,rot=chosen.rot,lastvars={0,0,0}},true)
@@ -19534,7 +19603,7 @@ function DrawMainMenu()
 					tm = tm..v.." "
 				end
 			end
-			for i,v in ipairs(recorddata.animation.camera) do
+			for i,v in ipairs(recorddata.animation.camera or {}) do
 				if i < recorddata.current then
 					cs = cs..v.." "
 				elseif i > recorddata.current + 2 then
@@ -19545,7 +19614,7 @@ function DrawMainMenu()
 			end
 			if overallcount > 0 or not recorddata.initialrecorded then
 				recorddata.initialrecorded = true
-				recorddata.canvas:newImageData():encode("png", "recording/"..recorddata.frame..".png")
+				recorddata.canvas:newImageData():encode("png", recorddata.imageexport and "export.png" or "recording/"..recorddata.frame..".png")
 				recorddata.frame = recorddata.frame + 1
 				love.graphics.printf({
 					{1, 1, 1}, "Frame "..recorddata.frame.." ("..string.format("%.02f", recorddata.timer).."s)"
@@ -19676,12 +19745,12 @@ function DrawPauseMenu()
 		love.graphics.print("UI Scale: "..newuiscale*100 .."%",centerx-150*uiscale,300*winym-10*uiscale,0,uiscale,uiscale)
 	elseif not inmenu and not winscreen and not mainmenu and wikimenu == "export" then
 		love.graphics.setColor(1,1,1,1)
-		love.graphics.printf("Export Picture",centerx,centery-147*uiscale,100,"center",0,2*uiscale,2*uiscale,50,8,skew)
+		love.graphics.printf("Export Image",centerx,centery-82*uiscale,100,"center",0,2*uiscale,2*uiscale,50,8,skew)
 		love.graphics.setColor(textcolor[1],textcolor[2],textcolor[3],1)
-		love.graphics.print("Size",centerx-100*uiscale,centery-38*uiscale,0,uiscale,uiscale)
-		love.graphics.print("Padding",centerx+50*uiscale,centery-38*uiscale,0,uiscale,uiscale)
-		love.graphics.print(newcellsize..(typing == "cellsize" and "_" or "px"),centerx-95*uiscale,centery+52*uiscale,0,2*uiscale,2*uiscale) 
-		love.graphics.print(newpadding..(typing == "padding" and "_" or "%"),centerx+55*uiscale,centery+52*uiscale,0,2*uiscale,2*uiscale)
+		love.graphics.print("Size",centerx-75*uiscale,centery-58*uiscale,0,uiscale,uiscale)
+		love.graphics.print("Padding",centerx+25*uiscale,centery-58*uiscale,0,uiscale,uiscale)
+		love.graphics.print(newcellsize..(typing == "cellsize" and "_" or "px"),centerx-75*uiscale,centery-42*uiscale,0,2*uiscale,2*uiscale) 
+		love.graphics.print(newpadding..(typing == "padding" and "_" or "%"),centerx+25*uiscale,centery-42*uiscale,0,2*uiscale,2*uiscale)
 	elseif winscreen == 1 then
 		local text = "Victory!"
 		local skew = math.sin(love.timer.getTime()*1.3)/8
@@ -19756,7 +19825,7 @@ function DrawButtonInfo()
 	end
 end
 
-versiontxt = [[Version #r2.0.2#55aaff_ff00ffw1.3.1
+versiontxt = [[Version #r2.0.2#55aaff_ff00ffw1.3.2
 #xCelLua Machine Wiki Mod created by #ff0000_00ff00aadenboy
 #xOriginal CelLua Machine created by#00ff00_80ff80 KyYay
 #xOriginal Cell Machine by #40a0ff-80c0ffSam Hogan]]

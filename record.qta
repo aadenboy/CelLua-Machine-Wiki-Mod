@@ -1,12 +1,43 @@
 [board]
-  {level} ::K3\::;1g;1g;1;eNrt00EKwjAQheHblIAgSc2yeAYD6iaoGITgyoXQ8xtapI4SNzog+H+rNAkzeWlrbYXfdSn3l/Ops9PIW2V/1bX4akHjrjnn6TmEIDeIVeCTj82vjd/M5GRQaNQ8N17tozPuENuFQqqh+LEpxYehj+3Llq2NTiHrWPdeXS7183KqZY6t08z/0EZ0FJLSDaT09kDK772aUf8/qt60UjIAAAAAAAAAAAAAAPCjbsgHjG0=;::
-  {camera} 1 1
-  {cellsize} 40
-  {capture} 13 9
+  {level} ::K3\::;z;f;1;eNozMCAITIaGEo2sAI0sC4LKkgahrwYTAADSsGQX;::
+  {camera} 1 2
+  {cellsize} 20
+  {capture} 35 9
 
 [animation]
   {defaultspeed} 0.2
+  {cellposition} aliased
+  {mode} forces
+  {fps} 30
+  {ticks}  0 -> 25 -0.05> 130
+  {camera} 0 -> 0  ->     0
+
+[board]
+  {level} ::K3\::;1g;8;1;eNozMBgFJACNKstow9RoIyM6WJVrAaIsNLIsRsN9UAAASEyZmw==;::
+  {camera} 1 1
+  {cellsize} 20
+  {capture} 15 8
+
+[animation]
+  {defaultspeed} 0.2
+  {cellposition} aliased
   {mode} ticks
   {fps} 30
-  {ticks}  0 -> 48
-  {camera} 0 -> 48
+  {ticks}  0 -> 8 -> 30
+  {camera} 0 -> 0 -> 22
+  
+[board]
+  {level} ::K3\::;h;7;0;eNozMIACEwM0gFtAI6kcQgfoRBuaRBvBpAKJ0YwuAABwvRlQ;::
+  {camera} 0 0
+  {cellsize} 20
+  {capture} 19 9
+
+[animation]
+  {defaultspeed} 0.2
+  {cellposition} aliased
+  {mode} ticks
+  {fps} 30
+  {trackplayer} 0-15 0-15
+  {ticks}  0 -> 68
+  {camera} 0 -> 0
+  {input} ::...111411.4111121122111.8888.4444...222...88111....111..............::
