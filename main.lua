@@ -18576,7 +18576,6 @@ end
 
 mx,my = 0,0
 function love.update(dt)
-	fetch.update()
 	if recording then
 		dt = 1/recorddata.animation.fps
 		recorddata.timer = recorddata.timer + dt
