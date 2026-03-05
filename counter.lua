@@ -190,4 +190,20 @@ for i,v in pairs(aggs) do --print("! "..i.."\n| "..v.."\n|-") end--]]
 --print(v) end
 --print(countList(lists[10], true,  {}))
 --print(countList(lists[10], false, {}))
-print(listPaths(144))
+--print(listPaths(144))
+
+local s = ""
+for i,v in ipairs(lists[3].cells) do
+    s = s..'<strong style="font-size: 150%;">{{Category|Generators/'..v.name.."|"..v.name.."}}</strong><p>"
+    for o,b in ipairs(v) do
+        if type(b) == "table" then
+            for p,n in ipairs(b) do
+                s = s.."{{Cell|"..cellinfo[n].name.."}} "
+            end
+        else
+            s = s.."{{Cell|"..cellinfo[b].name.."}} "
+        end
+    end
+    s = s.."</p><hr>\n"
+end
+print(s)

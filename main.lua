@@ -5,6 +5,7 @@ if not success then error("No utf8 library. Are you on the latest version of LOV
 ip = require "interpolation"
 getsplash = require "splashes"
 quanta = require "quanta"
+tween = require "tween" -- I like this better
 
 layers = {[0]={},{}}
 initiallayers = {[0]={},{}}
@@ -57,7 +58,12 @@ absolutedraw, rendercelltext = false, true
 cellcounts = {}
 subticking = 0
 forcespread = {}
-overallcount = 0
+step = 0
+newseed = 0
+seed = 0
+seeded = false
+cataloging = false
+cataloghistory = {}
 --[[
 	subticking modes
 	0 - no subtucking
@@ -65,6 +71,17 @@ overallcount = 0
 	2 - subsubticks (every cell individually)
 	3 - force propagation
 ]]
+
+function uuid()
+	return ("xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"):gsub('[xy]', function (c)
+		local v = (c == 'x') and math.random(0, 0xf) or math.random(8, 0xb)
+		return string.format('%x', v)
+	end)
+end
+function math.dir(x1, y1, x2, y2)
+	local dir = math.atan2(y2-y1,x2-x1) / math.pi * 2
+	return dir == 0 and 0 or (dir < 0 and -dir or 4 - dir)
+end
 
 function wrap(func) -- because coroutine.wrap doesn't give status info
     local co = coroutine.create(func)
@@ -89,13 +106,13 @@ function logforce(cx,cy,cdir,vars,oldcell,doyield,bias)
 			x = cx, y = cy,
 			lx = vars.lastx,
 			ly = vars.lasty,
-			dir = cdir, ldir = vars.lastdir,
+			dir = cdir, ldir = vars.lastdir or cdir,
 			rot = oldcell.rot,
 			forcetype = vars.forcetype,
-			bias = bias and (bias == math.huge and "∞" or bias) or "",
+			bias = bias and (bias == math.huge and "∞" or bias)..(vars.iforce and vars.iforce ~= 0 and (vars.iforce > 0 and "+" or "-")..(math.abs(vars.iforce) == 1 and "i" or math.abs(vars.iforce).."i") or "") or "",
 			cell = oldcell,
 			drawcell = table.copy(oldcell),
-			revealtick = overallcount + 2 -- edge case with pushing for some unknown reason
+			revealtick = step + (vars.forcetype == "push" and 2 or 1) -- edge case with pushing and swapping for some unknown reason
 		})
 		oldcell.vars.forceinterp = #forcespread
 		yield(doyield == nil or doyield, true)
@@ -106,6 +123,29 @@ recording = false
 recorddata = {}
 recordinginput = false
 inputrecording = ""
+
+CMWM = {}
+function CMWM.stepper(callbacks, loops)
+	assert(type(callbacks) == "table", "argument #1 of CMWM.stepper must be a table")
+	loops = loops or 0
+	assert(type(loops) == "number", "argument #2 of CMWM.stepper must be a number")
+	local stepper = {
+		callbacks = callbacks,
+		current = current,
+		loops = loops
+	}
+	function stepper.step(self)
+		assert(self, "<stepper>.step must be called as <stepper>:step() or <stepper>.step(<stepper>)")
+		if self.loops >= 0 then
+			(self.callbacks[self.current] or function() end)()
+			self.current = self.current + 1
+			if self.current > #self.callbacks then
+				self.current = 1
+				self.loops = self.loops - 1
+			end
+		end
+	end
+end
 
 local function packInt16LE(value)
 	if value > 32767 then value = 32767 end
@@ -2003,7 +2043,6 @@ function MakeTextures()
 	NewTex("subtick1","subtick1")
 	NewTex("subtick2","subtick2")
 	NewTex("subtick3","subtick3")
-	NewTex("subtick4","subtick4")
 	NewTex("delete","delete")
 	NewTex("checkoff","checkoff")
 	NewTex("checkon","checkon")
@@ -2062,9 +2101,12 @@ function MakeTextures()
 	NewTex("rendertext","rendertext")
 	NewTex("renderempty","renderempty")
 	NewTex("renderbg","renderbg")
+	NewTex("rendershadows","rendershadows")
 	NewTex("countcells","countcells")
 	NewTex("record","recordvideo")
 	NewTex("inputrecord","recordinput")
+	NewTex("catalog","catalog")
+	NewTex("seedrng","seedrng")
 	NewTex("forces/push","forcepush")
 	NewTex("forces/nudge","forcenudge")
 	NewTex("forces/pull","forcepull")
@@ -2081,6 +2123,7 @@ function MakeTextures()
 	NewTex("forces/dig","forcedig")
 	NewTex("forces/staple","forcestaple")
 	NewTex("forces/swap","forceswap")
+	NewTex("forces/swaptarget","forceswaptarget")
 	NewTex("forces/rotcw","forcerotcw")
 	NewTex("forces/rotccw","forcerotccw")
 	NewTex("forces/rot180","forcerot180")
@@ -2088,6 +2131,10 @@ function MakeTextures()
 	NewTex("forces/rotfullccw","forcerotfullccw")
 	NewTex("forces/flip","forceflip")
 	NewTex("forces/redirect","forceredirect")
+	NewTex("effects/target","targeteffect")
+	NewTex("effects/unique","uniqueeffect")
+	NewTex("target","target_tool")
+	NewTex("unique","unique_tool")
 end
 
 function MakePackBtn(i,pack)
@@ -2219,6 +2266,7 @@ end
 font = love.graphics.newFont("nokiafc22.ttf",8)
 serifbold = love.graphics.newFont("7-12-serif-bold.ttf",16)
 serif = love.graphics.newFont("7-12-serif.ttf",16)
+lmr = love.graphics.newFont("lmroman-regular-webfont.ttf",16)
 font:setFallbacks(serifbold,serif)
 love.graphics.setFont(font)
 
@@ -3483,6 +3531,8 @@ cellinfo = {
 	input_tool = {name="Input Freeze",		desc="Causes cells to be unable to update unless they are clicked on.", notcell=true},
 	permaclamp_tool = {name="Permaclamp",	desc="Makes a cell permanently resist a type of force.", notcell=true},
 	ghost_tool = {name="Ghostify",			desc="Makes cells act like Ghost or Ungeneratable cells.", notcell=true},
+	target_tool = {name="Target",			desc="Tracks a cell under a specific group. Intended to be used for cataloging.", notcell=true},
+	unique_tool = {name="Unique",			desc="Tracks a cell as if it were completely unique from other cells. Intended to be used for cataloging.", notcell=true},
 }
 
 function GetAttribute(id,attribute,...)
@@ -3744,6 +3794,7 @@ MergeIntoInfo("istool",{
 	paint=true,invertcolorpaint=true,invertpaint=true,hsvpaint=true,inverthsvpaint=true,invispaint=true,shadowpaint=true,blendmode=true,
 	timerep_tool=true,grav_tool=true,prot_tool=true,armor_tool=true,bolt_tool=true,coin_tool=true,tag_tool=true,spikes_tool=true,
 	petrify_tool=true,goo_tool=true,compel_tool=true,entangle_tool=true,input_tool=true,permaclamp_tool=true,ghost_tool=true,
+	target_tool=true,unique_tool=true
 })
 function IsTool(id)
 	return GetAttribute(id, "istool")
@@ -3899,6 +3950,7 @@ end
 cat = {}
 cat.paints = {name = "Paints",max=4,"paint","invertcolorpaint","invertpaint","invispaint","shadowpaint","hsvpaint","inverthsvpaint","blendmode"}
 cat.tool_effects = {name = "Effects",max=4,"timerep_tool","grav_tool","armor_tool","bolt_tool","permaclamp_tool","prot_tool","petrify_tool","goo_tool","compel_tool","spikes_tool","tag_tool","ghost_tool","entangle_tool","input_tool","coin_tool"}
+cat.tool_catalog = {name = "Cataloging",max=4,"target_tool","unique_tool"}
 
 cat.walls = {name = "Walls",max=6,1,41,126,154,229,1088,150,151,152,965,709,710,1046,1117,162,566,564,565,706,707,916,917,351,552}
 cat.pushables = {name = "Pushables",max=5,4,5,6,7,8,159,69,157,140,158,214,215,216,217,218,618,620,621,622,623,840,841,842,843,844,910,911,912,913,914}
@@ -3988,7 +4040,7 @@ cat.decorative_bg = {name="Decorative",max=4,"bggrass","bgdirt","bgstone","bgcob
 cat.truecells = {name="True Cells",max=3,199,200,201,202,203,204}
 
 lists = {}
-lists[0] = {name = "Tools", cells = {max=99,"eraser",cat.paints,cat.tool_effects}, desc = "They aren't cells, but they do modify the world.", icon = "eraser"}
+lists[0] = {name = "Tools", cells = {max=99,"eraser",cat.paints,cat.tool_effects,cat.tool_catalog}, desc = "They aren't cells, but they do modify the world.", icon = "eraser"}
 lists[1] = {name = "Basic", cells = {max=4,cat.walls,cat.pushables,cat.oppositions,cat.weights,cat.sticky,cat.extensions,cat.input,cat.decorative}, desc = "'Basic' cells.", icon = 4}
 lists[2] = {name = "Movers", cells = {max=4,cat.pushers,cat.pullers,cat.grabbers,cat.drillers,cat.slicers,cat.scissors,cat.missiles,cat.movers_other,cat.players,cat.particles}, desc = "Can move on their own, usually with a certain type of force.", icon = 2}
 lists[3] = {name = "Generators", cells = {max=4,cat.generators,cat.supergenerators,cat.physicalgenerators,cat.replicators,cat.builders,cat.makers,cat.gates,cat.generators_other}, desc = "Create or duplicate cells.", icon = 3}
@@ -4112,8 +4164,7 @@ function SetSelectedCell(id,b)
 	elseif (id == 567) and b then MakePropertyMenu({{"0 Neighbors: ",0,1,names=lifeoptions},{"1 Neighbor: ",0,3,names=lifeoptions},{"2 Neighbors: ",0,3,names=lifeoptions},{"3 Neighbors: ",0,3,names=lifeoptions},{"4 Neighbors: ",0,3,names=lifeoptions}
 												,{"5 Neighbors: ",0,3,names=lifeoptions},{"6 Neighbors: ",0,3,names=lifeoptions},{"7 Neighbors: ",0,3,names=lifeoptions},{"8 Neighbors: ",0,3,names=lifeoptions},{"Persistence: ",0}},b)
 	elseif (id == 604) and b then MakePropertyMenu({max=4,{"Survive Min: ",0},{"Survive Max: ",0},{"Birth Min: ",1},{"Birth Max: ",0},{"Range: ",1},{"Persistence: ",0},{"Neighbors: ",0,3,names={[0]="[]","<>","X","O"}}},b)
-	elseif (id == 614) and b then MakePropertyMenu({{"Jump Strength: ",0,default=2},
-													{"Coyote Time: ",0,default=1}},b)
+	elseif (id == 614) and b then MakePropertyMenu({{"Jump Strength: ",0,default=2}},b)
 	elseif (id == 222 or id == 1100 or id == 1101 or id == 1102 or id == 1103
 		or id == 1104 or id == 1105 or id == 1106 or id == 1107 or id == 1108) and b then MakePropertyMenu({{"Delay: ",1}},b)
 	elseif id == 644 and b then MakePropertyMenu({{"Generations: ",2}},b)
@@ -4144,6 +4195,8 @@ function SetSelectedCell(id,b)
 	elseif id == "entangle_tool" and b then MakePropertyMenu({{"ID: "},{"",0,1,names=enabledisable}},b)
 	elseif id == "permaclamp_tool" and b then MakePropertyMenu({{"",1,6,names={"Push","Pull","Grab","Swap","Scissor","Tunnel"}},{"",0,1,names=enabledisable}},b)
 	elseif id == "ghost_tool" and b then MakePropertyMenu({{"",0,2,default=1,names={[0]="Disable","Ghostify","Ungeneratable"}}},b)
+	elseif id == "target_tool" and b then MakePropertyMenu({{"Group: ",0,names={[0]="None"}}},b)
+	elseif id == "unique_tool" and b then MakePropertyMenu({{"",0,1,names=enabledisable}},b)
 	else propertiesopen = 0 end
 	if id ~= chosen.id then
 		for i=10,2,-1 do
@@ -4542,6 +4595,7 @@ function ReadSavedVars()
 			rendertext = true,
 			renderempty = false,
 			renderbg = false,
+			rendershadows = false,
 			moreui = true,
 			popups = true,
 			playercam = true;
@@ -4592,6 +4646,7 @@ function ReadSavedVars()
 	rendertext = settings.rendertext
 	renderempty = settings.renderempty
 	renderbg = settings.renderbg
+	rendershadows = settings.rendershadows
 	moreui = settings.moreui
 	popups = settings.popups
 	playercam = settings.playercam
@@ -4733,6 +4788,8 @@ function GetStoredCell(cell,upd,eaten)
 	local vars = DefaultVars(cell.vars[1])
 	vars.paint = cell.vars.paint
 	vars.blending = cell.vars.blending
+	vars.targetgroup = cell.vars.targetgroup
+	vars.unique = cell.vars.unique and uuid()
 	return {id=cell.vars[1],rot=cell.vars[2],lastvars={cell.lastvars[1],cell.lastvars[2],0},updated=upd,vars=vars,eatencells=eaten}
 end
 
@@ -5036,7 +5093,9 @@ function SetPlaceable(x,y,v)
 end
 
 function CopyCell(x,y,z)
-	return table.copy(GetCell(x,y,z))
+	local cell = table.copy(GetCell(x,y,z))
+	cell.vars.unique = cell.vars.unique and uuid()
+	return cell
 end
 
 function ClearWorld()
@@ -5050,6 +5109,7 @@ function ClearWorld()
 	placeables = {}
 	width = newwidth+2
 	height = newheight+2
+	seed = newseed
 	ResetChunks(width,height)
 	for z=0,depth-1 do
 		layers[z] = {}
@@ -5136,7 +5196,7 @@ function RefreshWorld()
 	currentsst = nil
 	forcespread = {}
 	tickcount = 0
-	overallcount = 0
+	step = 0
 	ResetPortals()
 end
 
@@ -6178,7 +6238,7 @@ function GetBorderPaint()
 	else	
 		return ""	
 	end	
-end	
+end 
 
 function SaveWorld()
 	local currentcell = 0
@@ -6667,6 +6727,67 @@ function LastStampPage()
 	end
 end
 
+function Catalog(first)
+	local minx, maxx, miny, maxy = math.huge, -math.huge, math.huge, -math.huge
+	local cellcode = ""
+	local uniques = 0
+	local cellcodes = {}
+	local catcells = {}
+	local any = false
+	for y=0,width-1 do
+		--cellcodes[y+1] = ""
+		for x=0,height-1 do
+			for z=0,depth-1 do
+				local c = GetCell(x,y,z)
+				if c.vars.targetgroup or c.vars.unique then
+					if c.vars.unique then
+						uniques = uniques + 1
+						if first then
+							cataloghistory.uhash[c.vars.unique] = true
+						elseif not cataloghistory.uhash[c.vars.unique] then
+							cataloghistory.failcase = "No true cycle"
+							return
+						end
+					end
+					minx = math.min(x, minx)
+					maxx = math.max(x, maxx)
+					miny = math.min(y, miny)
+					maxy = math.max(y, maxy)
+					table.insert(cells, table.copy(c))
+					any = true
+				end
+			end
+		end
+	end
+	if not any then
+		cataloghistory.failcase = "Contraption died"
+		return
+	end
+	for y=miny,maxy do
+		cellcodes[y+1] = ""
+		for x=minx,maxx do
+			for z=0,depth-1 do
+				local c = GetCell(x,y,z)
+				if c.vars.targetgroup or c.vars.unique or c.id == 0 then
+					local c = EncodeCell(c)
+					cellcodes[y+1] = cellcodes[y+1]..(z ~= 0 and "\\"..cheatsheet[z] or "")..c
+				end
+			end
+		end
+	end
+	local cw, ch = maxx - minx + 1, maxy - miny + 1
+	local result = "K3;"..base84(cw)..";"..base84(ch)..";0;"
+	for i=miny+1, maxy+1 do
+		cellcode = cellcode..cellcodes[i]
+	end
+	cellcode = love.data.encode("string","base64",love.data.compress("string","zlib",cellcode,9))
+	result = result..cellcode..";"
+	return result, minx, maxx, miny, maxy, uniques, catcells
+end
+function CatalogGitHub()
+	-- implement later smh
+end
+
 function ChangeEditMode()
 	if chosen.mode == "All" then
 		chosen.mode = "Or"
@@ -6834,14 +6955,16 @@ function CreateMenu()
 	NewButton(-25,25,20,20,function(b) return "subtick"..subticking end,"subtickbtn","Subticking",function(b) return "Controls how ticks are displayed.\nCurrently: "..({[0] = "Full ticks", "Subticks", "Subsubticks (individual cells)", "Force propagation"})[subticking] end,function(b) subticking = (subticking + 1) % 4 SetEnabledColors(b,subticking > 0,true) end,false,optionbactive,"center",2000,nil,{.5,.5,.5,1},{.75,.75,.75,1},{.25,.25,.25,1})
 	local b = NewButton(25,25,20,20,"fancy","fancybtn","Fancy Graphics",nil,function(b) settings.fancy = not fancy; fancy = settings.fancy; SetEnabledColors(b,fancy,true) end,false,optionbactive,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
 	SetEnabledColors(b,fancy,true)
-	local b = NewButton(-37.5,10,20,20,"fancy","fancybtnwmexport","Fancy Graphics","Toggle whether or not to export as if #rFancy Graphics#x is enabled",function(b) settings.fancywm = not fancywm; fancywm = settings.fancywm; SetEnabledColors(b,fancywm,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
+	local b = NewButton(-50,10,20,20,"fancy","fancybtnwmexport","Fancy Graphics","Toggle whether or not to export as if #rFancy Graphics#x is enabled",function(b) settings.fancywm = not fancywm; fancywm = settings.fancywm; SetEnabledColors(b,fancywm,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
 	SetEnabledColors(b,fancywm,true)
-	local b = NewButton(-12.5,10,20,20,"rendertext","rendertextbtn","Render Text","Toggle whether or not to render text shown on cells, like #ffff00Coin#x counts",function(b) settings.rendertext = not rendertext; rendertext = settings.rendertext; SetEnabledColors(b,rendertext,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
+	local b = NewButton(-25,10,20,20,"rendertext","rendertextbtn","Render Text","Toggle whether or not to render text shown on cells, like #ffff00Coin#x counts",function(b) settings.rendertext = not rendertext; rendertext = settings.rendertext; SetEnabledColors(b,rendertext,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
 	SetEnabledColors(b,rendertext,true)
-	local b = NewButton(12.5,10,20,20,"renderempty","renderemptybtn","Render Empty","Toggle whether or not to render empty space.",function(b) settings.renderempty = not renderempty; renderempty = settings.renderempty; SetEnabledColors(b,renderempty,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
+	local b = NewButton(0,10,20,20,"renderempty","renderemptybtn","Render Empty","Toggle whether or not to render empty space.",function(b) settings.renderempty = not renderempty; renderempty = settings.renderempty; SetEnabledColors(b,renderempty,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
 	SetEnabledColors(b,renderempty,true)
-	local b = NewButton(37.5,10,20,20,"renderbg","renderbgbtn","Render Background","Toggle whether or not to render the background.",function(b) settings.renderbg = not renderbg; renderbg = settings.renderbg; SetEnabledColors(b,renderbg,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
+	local b = NewButton(25,10,20,20,"renderbg","renderbgbtn","Render Background","Toggle whether or not to render the background.",function(b) settings.renderbg = not renderbg; renderbg = settings.renderbg; SetEnabledColors(b,renderbg,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
 	SetEnabledColors(b,renderbg,true)
+	local b = NewButton(50,10,20,20,"rendershadows","rendershadowsbtn","Render Shadows","Toggle whether or not to render cell shadows.",function(b) settings.rendershadows = not rendershadows; rendershadows = settings.rendershadows; SetEnabledColors(b,rendershadows,true) end,false,wmexport,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
+	SetEnabledColors(b,rendershadows,true)
 	local b = NewButton(-50,25,20,20,"bigui","moreuibtn","Minimalist UI",nil,function(b) settings.moreui = not moreui; moreui = settings.moreui; SetEnabledColors(b,not moreui,true) end,false,optionbactive,"center",2000,nil,{.5,.5,.5,1},{.75,.75,.75,1},{.25,.25,.25,1})
 	SetEnabledColors(b,not moreui,true)
 	local b = NewButton(50,25,20,20,"playercam","playercam","Player-Centered Camera",nil,function(b) settings.playercam = not playercam; playercam = settings.playercam; SetEnabledColors(b,playercam,true) end,false,optionbactive,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
@@ -6850,7 +6973,10 @@ function CreateMenu()
 	SetEnabledColors(b,popups,true)
 	NewButton(75,25,20,20,"music","musicbtn","Change Music",function() return "Currently Playing: "..music[settings.music].name end,function(b) settings.music = settings.music%#music+1; PlayMusic(settings.music) end,false,optionbactive,"center",2000,nil,{.5,.5,.5,1},{.75,.75,.75,1},{.25,.25,.25,1})
 	NewButton(-75,62,50,25,"pix","widthbtn",nil,nil,function() if not puzzle then typing = "width" end end,false,stricterbactive,"center",2000,nil,{.25,.25,.25,1},{.25,.25,.25,1},{.25,.25,.25,1})
-	NewButton(75,62,50,25,"pix","heightbtn",nil,nil,function() if not puzzle then typing = "height" end end,false,stricterbactive,"center",2000,nil,{.25,.25,.25,1},{.25,.25,.25,1},{.25,.25,.25,1})
+	NewButton(0,62,50,25,"pix","heightbtn",nil,nil,function() if not puzzle then typing = "height" end end,false,stricterbactive,"center",2000,nil,{.25,.25,.25,1},{.25,.25,.25,1},{.25,.25,.25,1})
+	NewButton(75,62,50,25,"pix","seedbtn",nil,nil,function() if not puzzle then typing = "seed" end end,false,stricterbactive,"center",2000,nil,{.25,.25,.25,1},{.25,.25,.25,1},{.25,.25,.25,1})
+	local b = NewButton(115,62,20,20,"seedrng","seedrng","Use seeded RNG",nil,function(b) seeded = not seeded; SetEnabledColors(b,seeded,true) end,false,optionbactive,"center",2000,nil,{.25,.5,.25,1},{.33,.75,.33,1},{.125,.25,.125,1})
+	SetEnabledColors(b,seeded,true)
 	NewButton(80,80,60,60,2,"nextlvlwin","Next Level",nil,function() NextLevel() Play("beep") winscreen = false end,false,function() return wactive() and winscreen ~= -1 end,"center",2000)
 	NewButton(0,80,60,60,11,"replaylvlwin",function() return winscreen == 1 and "Replay Solution" or "Reset Level" end,nil,RefreshWorld,false,wactive,"center",2000)
 	NewButton(-80,80,60,60,"delete","exitlvlwin","Back to Main Menu",nil,function() ToMenu("back"); ToggleHud(false); puzzle = true; inmenu = false; winscreen = false; Play("beep") end,false,wactive,"center",2000,nil,{1,.5,.5,.5},{1,.5,.5,1},{.5,.25,.25,1})
@@ -6872,50 +6998,183 @@ function CreateMenu()
 	NewButton(270,70,40,40,"countcells","countcellsbtn","Count Cells",nil,UpdateCount,false,mbleandnopuz,"topleft",0)
 	NewButton(270,120,40,40,"recordvideo","recordvideobtn","Record video","Takes a video data file from your clipboard and records each frame as an image into your save directory. See CelLua Machine Wiki Mod\\#Recording.",function()
 		local ds = love.system.getClipboardText()
-		local data, data2
+		local data, data2, data3, data4
 		local succ, err = pcall(function()
-			data, data2 = quanta.parse(ds)
+			data, data2, data3, data4 = quanta.parse(ds)
 		end)
-		local function fail(s)
+		local continue = true
+		local function fail(c, s)
+			if not c then return end
 			Play("destroy")
 			title = "#ff0000Something went wrong trying to load the recording."
 			subtitle = "#ff0000"..s
 			SetRichText(lvltitle,title,1000,"center")
 			SetRichText(lvldesc,subtitle,300,"center")
+			continue = false -- whatever
 		end
-		if not succ then fail(err) return end
-		if not data or #data == 0 then fail("no data provided") return end
+		fail(not succ, err)
+		fail(not data or not data2 or not data3 or not data4 or #data == 0, "no data provided")
+		if not continue then return end
 		local sceneboard = data2.board
 		local sceneanimation = data2.animation
+		local limits = love.graphics.getSystemLimits()
 		-- BEHOLD: THE ERROR SMÖRGÅSBORD!!
-		if not sceneboard or not sceneanimation then fail("[board] and or [animation] is missing") return end
-		if type(sceneboard.level) ~= "string" then fail("invalid level code") return end
-		if type(sceneboard.camera) ~= "table" then fail("{camera} must be a position") return end
-		if type(sceneboard.camera[1]) ~= "number" then fail("{camera} X must be a number") return end
-		if type(sceneboard.camera[2]) ~= "number" then fail("{cmaera} Y must be a number") return end
-		if type(sceneboard.cellsize) ~= "number" then fail("{cellsize} must be a number") return end
-		if sceneboard.cellsize < 1 then fail("{cellsize} must be greater than 0") return end
-		if sceneboard.cellsize > 1000 then fail("{cellsize} must be less than or equal to 1000") return end
-		if type(sceneboard.capture) ~= "table" then fail("{capture} must be a size") return end
-		if type(sceneboard.capture[1]) ~= "number" then fail("{capture} X must be a number") return end
-		if type(sceneboard.capture[2]) ~= "number" then fail("{capture} Y must be a number") return end
-		if sceneboard.capture[1] < 1 then fail("{capture} X must be greater than 0") return end
-		if sceneboard.capture[2] < 1 then fail("{capture} Y must be greater than 0") return end
-		if type(sceneanimation.defaultspeed) ~= "number" then fail("{defaultspeed} must be a number") return end
-		if (sceneanimation.cellposition ~= nil and sceneanimation.cellposition ~= "aliased" and sceneanimation.cellposition ~= "antialiased") then fail("{cellposition} must be nil, 'aliased' or 'antialiased'") return end
-		if type(sceneanimation.fps) ~= "number" then fail("{fps} must be a number") return end
-		if type(sceneanimation.ticks) ~= "table" then fail("{ticks} must be an array") return end
-		if #sceneanimation.ticks < 3 then fail("{ticks} must have three values") return end
-		if #sceneanimation.ticks % 2 ~= 1 then fail("{ticks} must be a multiple of 2, plus one") return end
-		if (type(sceneanimation.camera) ~= "table" and type(sceneanimation.camera) ~= "nil") then fail("{camera} must be nil or an array") return end
-		if (type(sceneanimation.camera) == "table" and #sceneanimation.camera ~= #sceneanimation.ticks) then fail("{camera} must match length of {ticks}") return end
-		if (type(sceneanimation.trackplayer) ~= "table" and type(sceneanimation.trackplayer) ~= "nil") then fail("{trackplayer} must be nil or array") return end
-		if (type(sceneanimation.trackplayer) == "table" and (
+		fail(not sceneboard or not sceneanimation, "[board] and or [animation] is missing")
+		if not sceneboard or not sceneanimation then return end
+		fail(type(sceneboard.level) ~= "string", "{level} must be a string")
+		fail(type(sceneboard.seed) ~= "number", "{seed} must be a number")
+		fail(type(sceneboard.camera) ~= "table", "{camera} must be a position")
+		fail(type(sceneboard.camera[1]) ~= "number", "{camera} X must be a number")
+		fail(type(sceneboard.camera[2]) ~= "number", "{cmaera} Y must be a number")
+		fail(type(sceneboard.cellsize) ~= "number", "{cellsize} must be a number")
+		fail(sceneboard.cellsize < 1, "{cellsize} must be greater than 0")
+		fail(type(sceneboard.capture) ~= "table", "{capture} must be a size")
+		fail(type(sceneboard.capture[1]) ~= "number", "{capture} X must be a number")
+		fail(type(sceneboard.capture[2]) ~= "number", "{capture} Y must be a number")
+		fail(sceneboard.capture[1] < 1, "{capture} X must be greater than 0")
+		fail(sceneboard.capture[2] < 1, "{capture} Y must be greater than 0")
+		fail(sceneboard.capture[1] * sceneboard.cellsize > limits.texturesize, "animation too large (max "..limits.texturesize..")")
+		fail(sceneboard.capture[2] * sceneboard.cellsize > limits.texturesize, "animation too large (max "..limits.texturesize..")")
+		fail(type(sceneanimation.defaultspeed) ~= "number", "{defaultspeed} must be a number")
+		fail((sceneanimation.cellfilter ~= nil and sceneanimation.cellfilter ~= "aligned" and sceneanimation.cellfilter ~= "free"), "{cellfilter} must be nil, 'aligned' or 'free'")
+		fail(type(sceneanimation.fps) ~= "number", "{fps} must be a number")
+		fail(type(sceneanimation.ticks) ~= "table", "{ticks} must be an array")
+		fail(#sceneanimation.ticks < 3, "{ticks} must have at least three values")
+		fail(#sceneanimation.ticks % 2 ~= 1, "{ticks} is formatted incorrectly")
+		local last = -1
+		local time = 0
+		for i=1, #sceneanimation.ticks, 2 do
+			local tick, arrow = tostring(sceneanimation.ticks[i]), sceneanimation.ticks[i+1]
+			fail(not tick:match("^%d+$"), "{ticks} expected positive integer at index "..i..", got "..tick)
+			tick = tonumber(tick)
+			fail(tick <= last, "{ticks} tick sequence is non-linear (index "..i..")")
+			last = tick
+			fail(
+				arrow
+				and not arrow:match("^[%-|>]>$")
+				and not arrow:match("^[%-|>]%d*%.?%d+>$") -- speed
+				and not arrow:match("^%-/%d*%.?%d+>$") -- rate
+				and not arrow:match("^%-%d*%.?%d+/%d+>$") -- speed + rate
+				"{ticks} arrow "..i.." is not formatted correctly"
+			)
+			if i > 1 and success then
+				local ptick, parrow = sceneanimation.ticks[i-2], sceneanimation.ticks[i-1]
+				local dur = tick - ptick
+				local speed = tonumber(parrow:match("^[%-|>](%d*%.?%d+)")) or sceneanimation.defaultspeed
+				local rate = tonumber(parrow:match("^%-%d*%.?%d+/(%d+)")) or (parrow:match("^>") and dur) or 1
+				time = time + math.ceil(dur / rate) * speed
+			end
+		end
+		fail((type(sceneanimation.camera) ~= "table" and type(sceneanimation.camera) ~= "nil"), "{camera} must be nil or an array")
+		for i=1, #(sceneanimation.camera or {}), 2 do
+			local tick, arrow = tostring(sceneanimation.camera[i]), sceneanimation.camera[i+1]
+			fail(
+				not tick:match("^%-?i$")
+				and not tick:match("^%-?%d*%.?%d+$")
+				and not tick:match("^%-?%d*%.?%d+i$")
+				and not tick:match("^%-?%d*%.?%d+[%+%-]i$")
+				and not tick:match("^%-?%d*%.?%d+[%+%-]%d*%.?%d+i$"),
+				"{camera} expected valid complex number at index "..i..", got "..tick
+			)
+			fail(
+				arrow
+				and not arrow:match("^%->$")
+				and not arrow:match("^%-%a+>$"),
+				"{camera} arrow "..i.." is not formatted correctly"
+			)
+		end
+		fail((type(sceneanimation.trackplayer) ~= "table" and type(sceneanimation.trackplayer) ~= "nil"), "{trackplayer} must be nil or array")
+		fail(type(sceneanimation.trackplayer) == "table" and (
 			type(sceneanimation.trackplayer[1]) ~= "number" and (type(sceneanimation.trackplayer[1]) ~= "string" or not sceneanimation.trackplayer[1]:match("%d+%-%d+"))
 		) and (
 			type(sceneanimation.trackplayer[2]) ~= "number" and (type(sceneanimation.trackplayer[2]) ~= "string" or not sceneanimation.trackplayer[2]:match("%d+%-%d+"))
-		)) then fail("{trackplayer} was formatted incorrectly") return end
-		if (type(sceneanimation.samplerate) ~= "number" and type(sceneanimation.samplerate) ~= "nil") then fail("{samplerate} must be nil or a number") return end
+		), "{trackplayer} was formatted incorrectly")
+		fail((type(sceneanimation.channels) ~= "string" and type(sceneanimation.samplerate) ~= "nil" or (type(sceneanimation.channels) == "string" and sceneanimation.channels ~= "mono" and sceneanimation.channels ~= "stereo")), "{channels} must be 'mono', 'stereo', or nil")
+		fail((type(sceneanimation.samplerate) ~= "number" and type(sceneanimation.samplerate) ~= "nil"), "{samplerate} must be nil or a number")
+		local scriptsordered = {}
+		local scriptsubticks = {}
+		for i,v in ipairs(data3.script or {}) do
+			table.insert(scriptsordered, v)
+			local id = getmetatable(v).__id
+			if id then
+				data3.script[i] = nil
+				data3.script[id] = v
+			end
+			id = id or i
+			local pre = "local arg={...}local self=arg[1]\n"
+			v.initialcallback = v.initial and load(pre..v.initial)
+			fail(v.initial and not v.initialcallback, "[script] "..id.." {initial} failed to parse")
+			for _,c in ipairs{"beforeTick", "afterTick", "animationStep", "end"} do
+				v.update[c.."callback"] = v.update[c] and load(pre..v.update[c])
+				fail(v.update[c] and not v.update[c.."callback"], "[script] "..id.." {update:"..c.."} failed to parse")
+			end
+			if v.subtick then
+				fail(type(v.subtick) ~= "table", "[script] "..id.." {subtick} must be a table")
+				fail(type(v.subtick.index) ~= "string" and type(v.subtick.index) ~= "number", "[script] "..id.." {subtick:index} must be a valid index")
+				fail(type(v.subtick.index) == "string" and v.subtick.index ~= "first" and v.subtick.index ~= "last", "[script] "..id.." {subtick:index} must be a valid index")
+				fail(type(v.subtick.index) == "number" and (v.subtick.index < 0 or v.subtick.index > #subticks), "[script] "..id.." {subtick:index} must be a valid index")
+				v.subtick.callbackcallback = load(v.subtick.callback)
+				fail(not v.subtick.callback, "[script] "..id.." {subtick:callback} failed to parse")
+				scriptsubticks[v.subtick.index] = scriptsubticks[v.subtick.index] or {}
+				table.insert(scriptsubticks[v.subtick.index], v)
+			end
+		end
+		sceneanimation.layers = {}
+		sceneanimation.lowestlayer = 0
+		sceneanimation.highestlayer = 0
+		for i,v in ipairs(data3.graphic or {}) do
+			local id = getmetatable(v).__id
+			if id then
+				data3.script[i] = nil
+				data3.script[id] = v
+			end
+			id = id or i
+			v.scale = v.scale or {1, 1}
+			v.rotation = v.rotation or 0
+			v.skew = v.skew or {0, 0}
+			v.layer = v.layer or (depth - 1)
+			v.color = v.color or {1, 1, 1}
+			fail(type(v.position) ~= "table", "[graphic] "..id.." {position} must be a position")
+			fail(type(v.position[1]) ~= "number", "[graphic] "..id.." {position} X must be a number")
+			fail(type(v.position[2]) ~= "number", "[graphic] "..id.." {position} Y must be a number")
+			fail(type(v.scale) ~= "table", "[graphic] "..id.." {scale} must be a scale (x, y) or nil")
+			fail(type(v.scale[1]) ~= "number", "[graphic] "..id.." {scale} X must be a number")
+			fail(type(v.scale[2]) ~= "number", "[graphic] "..id.." {scale} Y must be a number")
+			fail(type(v.rotation) ~= "number" and type(v.rotation) ~= "nil", "[graphic] "..id.." {rotation} must be a number or nil")
+			fail(type(v.skew) ~= "table", "[graphic] "..id.." {skew} must be a percentage (x, y) or nil")
+			fail(type(v.skew[1]) ~= "number", "[graphic] "..id.." {skew} X must be a number")
+			fail(type(v.skew[2]) ~= "number", "[graphic] "..id.." {skew} Y must be a number")
+			fail(v.align ~= "camera" and v.align ~= "board", "[graphic] "..id.." {align} must be 'camera' or 'world'")
+			fail(type(v.layer) ~= "number", "[graphic] "..id.." {layer} must be a number")
+			sceneanimation.layers[v.layer] = sceneanimation.layers[v.layer] or {}
+			table.insert(sceneanimation.layers[v.layer], v)
+			sceneanimation.lowestlayer = math.min(sceneanimation.lowestlayer, v.layer)
+			sceneanimation.highestlayer = math.max(sceneanimation.highestlayer, v.layer)
+			fail(type(v.color) ~= "table", "[graphic] "..id.." {color} must be a color #rgb #rgba #rrggbb #rrggbbaa (r, g, b) (r, g, b, a) or nil")
+			fail(type(v.color[1]) ~= "number", "[graphic] "..id.." {color} R must be a number")
+			fail(type(v.color[2]) ~= "number", "[graphic] "..id.." {color} G must be a number")
+			fail(type(v.color[3]) ~= "number", "[graphic] "..id.." {color} B must be a number")
+			fail(type(v.color[4]) ~= "number" and type(v.color[4]) ~= "nil", "[graphic] "..id.." {color} A must be a number or nil")
+			if v.type == "label" then
+				v.font = v.font or "nokia"
+				fail(v.font ~= "nokia" and v.font ~= "serifbold" and v.font ~= "serif" and v.font ~= "lmr", "[graphic] "..id.." {font} must be 'nokia', 'serifbold', 'serif', or 'lmr'")
+				fail(type(v.text) ~= "string", "[graphic] "..id.." {text} must be a string")
+			elseif v.type == "texture" then
+				fail(type(v.file) ~= "string", "[graphic] "..id.." {file} must be a string")
+			elseif v.type == "cell" then
+				fail(type(v.id) ~= "string" and type(v.id) ~= "number", "[graphic] "..id.." {id} must be a valid cell id")
+				fail(type(v.vars) ~= "table" and type(v.vars) ~= "nil", "[graphic] "..id.." {id} must either be a table or nil")
+			elseif v.type == "canvas" then
+				fail(type(v.size) ~= "table", "[graphic] "..id.." {size} must be a position")
+				fail(type(v.size[1]) ~= "number", "[graphic] "..id.." {size} X must be a number")
+				fail(type(v.size[2]) ~= "number", "[graphic] "..id.." {size} Y must be a number")
+				fail(v.size[1] < 0, "[graphic] "..id.." {size} X must be greater than 0")
+				fail(v.size[2] < 0, "[graphic] "..id.." {size} Y must be greater than 0")
+				fail(v.size[1] > limits.texturesize, "[graphic] "..id.." too large (max "..limits.texturesize..")")
+				fail(v.size[1] > limits.texturesize, "[graphic] "..id.." too large (max "..limits.texturesize..")")
+			else fail(true, "[graphic] "..id.." {type} unknown type "..tostring(v.type)) end
+		end
+		if not continue then return end
 		if not LoadWorld(sceneboard.level) then return end
 		RefreshWorld()
 		recorddata = {
@@ -6926,10 +7185,15 @@ function CreateMenu()
 			timer = 0,
 			next = 0,
 			frame = 1,
+			step = 0,
 			audio = {
 				buffer = {},
 				playing = {}
-			}
+			},
+			scriptsordered = scriptsordered,
+			scripts = data3.script,
+			graphics = data3.graphic,
+			scriptsubticks = scriptsubticks
 		}
 		recorddata.animation.usinginput = not not recorddata.animation.input
 		recorddata.animation.input = recorddata.animation.input or ""
@@ -6949,11 +7213,32 @@ function CreateMenu()
 			subsubsubticks = 3,
 			propagation = 3
 		})[recorddata.animation.mode or "ticks"] or 0
+		local frames = math.ceil(time * sceneanimation.fps)
+		local seconds, minutes = time % 60, time / 60
+		local estimate = sceneboard.capture[1] * sceneboard.capture[2] * sceneboard.cellsize^2 * 4 / 125 -- single PNG assuming 125:1 compression
+					   * frames -- collective sum
+		local log = math.min(math.floor(math.log(estimate)/math.log(1000)), 4)
+		local unit = ({"bytes", "KB", "MB", "GB"})[log+1] or "TB" -- if you ever get into tb territory you are beyond saving
+		local relative = estimate / 1000^log
+		local prompt = love.window.showMessageBox(
+			"CelLua Machine Wiki Mod",
+			string.format(
+				"The recording will last roughly %d frames (%dm%.1fs).\nThe amount of disk space used is estimated to be %.1f %s.\nAre you sure you want to continue with the recording?",
+				frames, minutes, seconds, relative, unit
+			),
+			{"Continue", "Cancel", enterbutton = 1, escapebutton = 2}
+		)
+		if prompt ~= 1 then return end
 		TogglePause(false)
 		Play("unlock")
 		recursivelyDelete("recording")
 		love.filesystem.createDirectory("recording")
 		recording = true
+		for i,v in ipairs(recorddata.scriptsordered) do
+			if v.initial then
+				ExecuteScript(v.initialcallback, v)
+			end
+		end
 		-- ::rth:: --
 	end,false,mbleandnopuz,"topleft",0)
 	NewButton(270,170,40,40,"recordinput","recordinputbtn","Record Input","Records your input as you play. Toggle this off to copy what was recorded.",function(b)
@@ -6962,6 +7247,21 @@ function CreateMenu()
 			love.system.setClipboardText(inputrecording)
 		end
 		SetEnabledColors(b,recordinginput,true)
+	end,false,mbleandnopuz,"topleft",0)
+	NewButton(270,220,40,40,"catalog","catalogbtn","Catalog","Automatically attempts to determine the properties of a set of cells.\nTarget cells with the #ff0000Target#x and #rUnqiue#x tools.",function(b)
+		RefreshWorld()
+		cataloghistory = {uhash = {}}
+		cataloghistory[1] = {Catalog(true)}
+		if not cataloghistory[1][1] then
+			Play("destroy")
+			return
+		end
+		cataloging = true
+		delay = 0
+		tpu = 1
+		subticking = 0
+		TogglePause(false)
+		Play("unlock")
 	end,false,mbleandnopuz,"topleft",0)
 	NewButton(-205,50,40,40,"copy","copycount","Copy as Wikitext",nil,function()
 		local a = ""
@@ -8705,10 +9005,10 @@ function DoWirelessTransmitter(cell,x,y,func,neighborfunc,nval,queuekey,dirindex
 	vars[dirindex] = 0
 	if supdatekey ~= cell.supdatekey then
 		Queue(queuekey, function() supdatekey = supdatekey+1 end)
-		Queue(queuekey, function() RunOn(function(c) return c.id == 583 and c.vars[1] == cell.vars[1] end,
+		Queue(queuekey, RunOn(function(c) return c.id == 583 and c.vars[1] == cell.vars[1] end,
 		function(x,y,c) c.supdatekey = supdatekey; func(x,y,unpack(vars)) end,
 		"rightup",
-		583)() end)
+		583))
 		Queue(queuekey, function() updatekey = updatekey+1 end)
 	end
 	local neighbors = neighborfunc(x,y,nval)
@@ -9380,11 +9680,17 @@ function DoQuantumEnemy(cell,vars)
 		EmitParticles("quantum",x,y)
 	end,
 	"rightup",
-	299)
+	299)()
 end
 
 function ExecuteScriptCell(cell)
 	local success,err = pcall(loadstring(cell.vars[1]))
+	if not success then
+		DEBUG(err)
+	end
+end
+function ExecuteScript(s, ...)
+	local success,err = pcall(s, ...)
 	if not success then
 		DEBUG(err)
 	end
@@ -12244,17 +12550,9 @@ function SwapCells(x1,y1,dir1,x2,y2,dir2,vars)
 	cell2.testvar = "B"
 	GetCell(x2,y2,vars.layer).testvar = "B"
 	local mx, my = (x1+x2)/2, (y1+y2)/2
-	local vars2 = {}
-	vars2.lastx,vars2.lasty = mx,my
-	vars2.lastdir = dir1
-	vars2.forcetype = "swap"
-	logforce(x1,y1,dir1,vars2,cell1,false)
+	logforce(x1,y1,dir1,{lastx=mx,lasty=my,lastdir=dir1,forcetype="swap"},cell1,false)
 	if coroutclose then return end
-	local vars3 = {}
-	vars3.lastx,vars3.lasty = mx,my
-	vars3.lastdir = dir2
-	vars3.forcetype = "swap"
-	logforce(x2,y2,dir2,vars3,cell2)
+	logforce(x2,y2,dir2,{lastx=mx,lasty=my,lastdir=dir2,forcetype="swap"},cell1,true)
 	if coroutclose then return end
 	if (not unb1 or dest1) or (not unb2 or dest2) then
 		if dest1 and not unb2 and not non2 then
@@ -13111,9 +13409,18 @@ end
 function DoCycler(x,y,cell,dir)
 	if Override("DoCycler"..cell.id,x,y,cell,dir) then return end
 	local cx,cy = StepForward(x,y,dir)
+	local jammed
 	for i=-1,1 do
 		local ccx,ccy = cx + (dir%2 == 1 and i or 0),cy + (dir%2 == 0 and i or 0)
-		if IsUnbreakable(GetCell(ccx,ccy),dir,ccx,ccy,{forcetype="swap",lastcell=cell}) then return end
+		if IsUnbreakable(GetCell(ccx,ccy),dir,ccx,ccy,{forcetype="swap",lastcell=cell}) then jammed = i break end
+	end
+	for i=-1,1 do
+		local ni = (i + 2) % 3 - 1
+		local ccx,ccy = cx + (dir%2 == 1 and i or 0),cy + (dir%2 == 0 and i or 0)
+		local nccx,nccy = cx + (dir%2 == 1 and ni or 0),cy + (dir%2 == 0 and ni or 0)
+		local fdir = math.dir(nccx, nccy, ccx, ccy)
+		logforce(nccx, nccy,fdir,{lastx=x,lasty=y,forcetype="swap"},jammed and getempty() or GetCell(ccx, ccy))
+		if jammed == i or coroutclose then return end
 	end
 	if cell.id == 625 or cell.id == 627 or cell.id == 632 or cell.id == 634 or cell.id == 636 or cell.id == 642 and dir == cell.rot then
 		cx,cy = StepLeft(cx,cy,dir)
@@ -14428,19 +14735,24 @@ function DoBasicGear(x,y,cell,neighbors,dir,rotateneighbors,rotation)
 	rotation = rotation or dir
 	local jammed
 	for k,v in pairs(neighbors) do
-		jammed = jammed or IsUnbreakable(GetCell(v[1],v[2]),k,v[1],v[2],{forcetype="swap",lastcell=cell}) or GetAttribute(GetCell(v[1],v[2]).id,"isgear",GetCell(v[1],v[2]),k,v[1],v[2])
+		jammed = jammed or ((IsUnbreakable(GetCell(v[1],v[2]),k,v[1],v[2],{forcetype="swap",lastcell=cell}) or GetAttribute(GetCell(v[1],v[2]).id,"isgear",GetCell(v[1],v[2]),k,v[1],v[2])) and v)
+	end
+	local lastpos = dir == 1 and (neighbors[3.5] or neighbors[3]) or (neighbors[0] or neighbors[.5])
+	local lastcell = GetCell(lastpos[1],lastpos[2])
+	for i=dir == 1 and 0 or 3.5,dir == -1 and 0 or 3.5,dir/2 do
+		local v = neighbors[i]
+		if v then
+			local cell = GetCell(v[1],v[2])
+			local fdir = math.dir(v[1], v[2], lastpos[1], lastpos[2])
+			logforce(v[1],v[2],fdir,{lastx=x,lasty=y,forcetype="swap"},jammed and getempty() or cell)
+			if coroutclose then return end
+			if not jammed then SetCell(v[1],v[2],lastcell) end
+			if jammed and jammed[1] == v[1] and jammed[2] == v[2] then return end
+			lastpos = v
+			lastcell = cell
+		end
 	end
 	if not jammed then
-		local lastpos = dir == 1 and (neighbors[3.5] or neighbors[3]) or (neighbors[0] or neighbors[.5])
-		local lastcell = GetCell(lastpos[1],lastpos[2])
-		for i=dir == 1 and 0 or 3.5,dir == -1 and 0 or 3.5,dir/2 do
-			local v = neighbors[i]
-			if v then
-				local cell = GetCell(v[1],v[2])
-				SetCell(v[1],v[2],lastcell)
-				lastcell = cell
-			end
-		end
 		for i=0,3.5,.5 do
 			local v = rotateneighbors[i]
 			if v then
@@ -16992,6 +17304,7 @@ end
 function getcopy(cell,cell2)
 	local copy = table.copy(cell)
 	copy.eatencells = {cell2}
+	copy.vars.unique = cell.vars.unique and uuid()
 	--if cell2.id ~= 0 then copy.lastvars = cell2.lastvars end
 	copy.updated = true
 	return copy
@@ -17943,13 +18256,17 @@ function DoTick(first)
 	if updatekey > 1000000000000 then updatekey = 0 end --juuuust in case
 	if supdatekey > 1000000000000 then supdatekey = 0 end
 	if stickkey > 1000000000000 then stickkey = 0 end
-	if tickcount == 0 then overallcount = 0; inputrecording = "" end
+	if tickcount == 0 then
+		step = 0
+		inputrecording = ""
+		math.randomseed(seeded and newseed or os.time() + os.clock())
+	end
 	local keyid = 0
-	local curkey = recording and tonumber(recorddata.animation.input:sub(overallcount+1, overallcount+1), 16) or 0
-	if (not recording and love.keyboard.isDown("d") or love.keyboard.isDown("right")) or (recording and curkey % 2 == 1) then held = held or 0; heldhori = heldhori or 0; keyid = keyid + 1 end
-	if (not recording and love.keyboard.isDown("a") or love.keyboard.isDown("left")) or (recording and curkey % 4 >= 2) then held = held or 2; heldhori = heldhori or 2; keyid = keyid + 2 end
-	if (not recording and love.keyboard.isDown("w") or love.keyboard.isDown("up")) or (recording and curkey % 8 >= 4) then held = held or 3; heldvert = heldvert or 3; keyid = keyid + 4 end
-	if (not recording and love.keyboard.isDown("s") or love.keyboard.isDown("down")) or (recording and curkey >= 8) then held = held or 1; heldvert = heldvert or 1; keyid = keyid + 8 end
+	local curkey = recording and tonumber(recorddata.animation.input:sub(step+1, step+1), 16) or 0
+	if (not recording and not cataloging and love.keyboard.isDown("d") or love.keyboard.isDown("right")) or (recording and curkey % 2 == 1) then held = held or 0; heldhori = heldhori or 0; keyid = keyid + 1 end
+	if (not recording and not cataloging and love.keyboard.isDown("a") or love.keyboard.isDown("left")) or (recording and curkey % 4 >= 2) then held = held or 2; heldhori = heldhori or 2; keyid = keyid + 2 end
+	if (not recording and not cataloging and love.keyboard.isDown("w") or love.keyboard.isDown("up")) or (recording and curkey % 8 >= 4) then held = held or 3; heldvert = heldvert or 3; keyid = keyid + 4 end
+	if (not recording and not cataloging and love.keyboard.isDown("s") or love.keyboard.isDown("down")) or (recording and curkey >= 8) then held = held or 1; heldvert = heldvert or 1; keyid = keyid + 8 end
 	if recordinginput then inputrecording = inputrecording..(keyid == 0 and "." or string.format("%x", keyid)) end
 	if subticking == 0 or level then
 		subtickco = nil
@@ -17960,6 +18277,66 @@ function DoTick(first)
 		ResetCells(first)
 		for i=subtick%#subticks+1,#subticks do
 			subticks[i]()()
+		end
+		if cataloging then
+			local catalog, minx, maxx, miny, maxy, uniques, catcells = Catalog()
+			local fail = false
+			if not cataloghistory.failcase == "Contraption died" then
+				fail = true
+				title = "Contraption died"
+				subtitle = "Lasted "..tickcount.." ticks"
+			elseif uniques ~= cataloghistory[1][6] then
+				fail = true
+				title = "Contraption has no true period"
+				subtitle = "One or more cells tracked as #rUnique#x has died"
+			elseif cataloghistory.failcase == "No true cycle" then
+				fail = true
+				title = "Contraption has no true period"
+				subtitle = "A new cell tracked as #rUnique#x was encountered"
+			end
+			if fail then
+				Play("destroy")
+				cataloging = false
+				--subtitle = subtitle.."\nFetching cataloger from GitHub..."
+				SetRichText(lvltitle,title,1000,"center")
+				SetRichText(lvldesc,subtitle,300,"center") 
+				goto skip
+			end
+			cam.tarx = (maxx + minx) * 10
+			cam.tary = (maxy + miny) * 10
+			cam.tarzoom = 20
+			for i,v in ipairs(cataloghistory) do
+				if v[1] == catalog then
+					local cx, cy = (v[2] + v[3]) / 2, (v[4] + v[5]) / 2
+					local dx, dy = cam.tarx/20 - cx, cam.tary/20 - cy
+					local osc = tickcount - i + 1
+					if dx == 0 and dy == 0 then
+						title = "Oscillator"
+						subtitle = "Period "..osc
+					else
+						title = "Spaceship"
+						if dx == 0 then
+							subtitle = "["..dy.."i]"..(osc > 1 and "/"..osc or "")
+						else
+							subtitle = "["..dx..(dy ~= 0 and (dy > 0 and "+" or "")..dy.."i" or "").."]"..(osc > 1 and "/"..osc or "")
+						end
+						subtitle = "From: "..minx..", "..maxx..", "..miny..", "..maxy.."\nTo: "..v[2]..", "..v[3]..", "..v[4]..", "..v[5]
+					end
+					--subtitle = subtitle.."\nFetching cataloger from GitHub..."
+					SetRichText(lvltitle,title,1000,"center")
+					SetRichText(lvldesc,subtitle,300,"center")
+					TogglePause(true)
+					cataloging = false
+					Play("beep")
+					break
+				end
+			end
+			table.insert(cataloghistory, {catalog, minx, maxx, miny, maxy, catcells})
+			SetRichText(lvldesc,subtitle,300,"center")
+			::skip::
+			if not cataloging then
+				CatalogGitHub()
+			end
 		end
 	elseif subticking == 1 then
 		subtickco = nil
@@ -17995,15 +18372,15 @@ function DoTick(first)
 		::out::
 		if subtick == #subticks then subtick = 0; subtickco = nil end
 	end
-	overallcount = overallcount + 1
+	step = step + 1
 	held = nil
 	heldhori = nil
 	heldvert = nil
 	actionpressed = nil
 	isinitial = false
 	local sd = level and .2 or delay
+	dtime = (recording and tpu > 0) and math.min(math.max(0, dtime - sd), sd) or 0
 	recorddata.debug = dtime..", "..sd..", "..(dtime - sd)
-	dtime = recording and math.min(math.max(0, dtime - sd), sd) or 0
 	itime = 0
 end
 
@@ -18182,11 +18559,24 @@ function HandleTool(x,y,z,c)
 			c.vars.input = chosen.data[1] ~= 1 and true or nil
 			PlaceCell(x,y,c,z)
 		end
+	elseif chosen.id == "target_tool" then
+		if c.id ~= 0 then
+			c.vars.targetgroup = chosen.data[1] ~= 0 and chosen.data[1] or nil
+			c.vars.unique = nil
+			PlaceCell(x,y,c,z)
+		end
+	elseif chosen.id == "unique_tool" then
+		if c.id ~= 0 then
+			c.vars.unique = chosen.data[1] == 0 and uuid() or nil
+			c.vars.targetgroup = nil
+			PlaceCell(x,y,c,z)
+		end
 	end
 end
 
 mx,my = 0,0
 function love.update(dt)
+	fetch.update()
 	if recording then
 		dt = 1/recorddata.animation.fps
 		recorddata.timer = recorddata.timer + dt
@@ -18204,12 +18594,30 @@ function love.update(dt)
 	end
 	postloading = true
 	ip.Update(dt)
+	if recording and not recorddata.imageexport then
+		for i,v in ipairs(recorddata.scriptsordered) do
+			if v.update and v.update.beforeTick then
+				ExecuteScript(v.update.beforeTickcallback, v)
+			end
+		end
+	end
 	if not paused and not mainmenu and (recorddata.initialrecorded or not recording) then
 		local scene = recorddata.scene
 		local anim = recorddata.animation
 		dtime = dtime + dt
 		if dtime > (level and .2 or delay) then
+			if cataloging and love.keyboard.isDown("escape") then
+				delay = 0.2
+				tpu = 1
+				RefreshWorld()
+				cataloging = false
+				goto notick
+			end
 			if recording then
+				if anim.delaytween then
+					anim.delaytween:update(1)
+					delay = anim.delaytween.subject[1]
+				end
 				if love.keyboard.isDown("escape") then
 					delay = 0.2
 					tpu = 1
@@ -18221,26 +18629,21 @@ function love.update(dt)
 				for i=#anim.ticks, 1, -2 do
 					local value = anim.ticks[i]
 					local transition = anim.ticks[i+1]
-					if value <= overallcount and recorddata.current < i then
-						local camvalue = anim.camera and tostring(anim.camera[i+2])
+					if value <= step and recorddata.current < i then
+						local camvalue = anim.camera and anim.camera[i] and tostring(anim.camera[i+2])
+						local camarrow = anim.camera and anim.camera[i+1]
 						local length = 0
 						recorddata.current = i
 						anim.ltime = 0
-						if transition == "->" or (transition or ""):match("^%-%d*%.?%d+>$") then
-							local number = tonumber(transition:match("^%-(%d*%.?%d+)>$"))
-							delay = number or anim.defaultspeed
-							tpu = 1
-							anim.lerptotal = anim.ticks[i+2] - value
-						elseif (transition or ""):match("^%-%d*%.?%d+/%d+>$") then
-							delay, tpu = transition:match("^%-(%d*%.?%d+)/(%d+)>$")
-							delay = tonumber(delay) or anim.defaultspeed
-							tpu = tonumber(tpu) or 1
-							anim.lerptotal = math.ceil((anim.ticks[i+2] - value) / tpu)
-						elseif transition == ">>" or (transition or ""):match("^>%d*%.?%d+>$") then
-							local number = tonumber(transition:match("^>(%d*%.?%d+)>$"))
-							delay = number or anim.defaultspeed
-							tpu = anim.ticks[i+2] - value
-							anim.lerptotal = 1
+						local mode, speed, rate, easing
+						if transition then
+							mode = transition:sub(1, 1)
+							speed = tonumber(transition:match("^[%-|>](%d*%.?%d+)"))
+							rate = tonumber(transition:match("/(%d+)"))
+							easing = transition:match("(%a+)") -- eh. keeping here in case I come back and try again
+							if easing and not tween.easing[easing] then
+								easing = nil
+							end
 						else
 							delay = 0.2
 							tpu = 1
@@ -18249,8 +18652,9 @@ function love.update(dt)
 							recording = false
 							love.resize()
 							
-							if anim.samplerate then
+							if anim.samplerate or anim.channels then
 								recorddata.timer = recorddata.timer - dt * 2
+								anim.samplerate = anim.samplerate or 44100
 								local channels = anim.channels == "stereo" and 2 or 1
 								local soundData = love.sound.newSoundData(
 									math.floor(recorddata.timer * anim.samplerate),
@@ -18304,11 +18708,52 @@ function love.update(dt)
 								file:close()
 								soundData:release()
 							end
-
 							goto notick
 						end
+						local usetpu = 1
+						local prevdelay = delay
+						if mode == "-" then
+							delay = speed or anim.defaultspeed
+							tpu = rate or 1
+							usetpu = tpu
+						elseif mode == ">" then
+							delay = speed or anim.defaultspeed
+							tpu = anim.ticks[i+2] - value
+							anim.lerptotal = delay
+						elseif mode == "|" then
+							local diff = anim.ticks[i+2] - value
+							delay = (number or anim.defaultspeed) * diff
+							tpu = 0
+							step = step + diff
+							dtime = 0
+						end
+						if mode == "-" or mode == "|" then
+							if not easing then
+								anim.lerptotal = math.ceil((anim.ticks[i+2] - value) / usetpu) * delay
+								anim.delaytween = nil
+							else
+								anim.lerptotal = 0
+								local diff = math.ceil((anim.ticks[i+2] - value) / usetpu)
+								local t = tween.new(diff, {prevdelay}, {delay}, easing)
+								for i=1, diff do
+									anim.lerptotal = anim.lerptotal + t.subject[1]
+									t:update(1)
+								end
+								t:set(0)
+								anim.delaytween = t
+								delay = prevdelay
+							end
+						end
 
-						if camvalue and (camvalue:match("^[%+%-]?i$") or camvalue:match("^[%+%-]?%d*%.?%d+i?$") or camvalue:match("^[%+%-]?%d*%.?%d+[%+%-]%d*%.?%d*i$")) then
+						if camvalue then
+							local easing
+							if camarrow and camarrow:match("%a") then
+								easing = camarrow:match("%a+")
+								if not tween.easing[easing] then
+									easing = nil
+								end
+							end
+							anim.camtween = tween.new(anim.lerptotal, {0}, {1}, easing or "linear")
 							if not anim.trackplayer and anim.tocam then
 								cam.x = (anim.fromcam.x or cam.x) + (anim.tocam.x or 0)
 								cam.y = (anim.fromcam.y or cam.y) + (anim.tocam.y or 0)
@@ -18316,14 +18761,21 @@ function love.update(dt)
 								anim.trackplayer.offx = (anim.fromcam.x or anim.trackplayer.offx) + (anim.tocam.x or 0)
 								anim.trackplayer.offy = (anim.fromcam.y or anim.trackplayer.offy) + (anim.tocam.y or 0)
 							end
-							local x, y = camvalue:match("^([%+%-]?%d*%.?%d+)([%+%-]%d*%.?%d*)i$")
-							x = x or camvalue:match("^([%+%-]?%d*%.?%d+)$")
-							y = y or camvalue:match("^([%+%-]?%d*%.?%d+)i$") or camvalue:match("^([%+%-]?)i$")
-							if y == "+" or y == "-" then y = y.."1" end
+							local x, y
+							x = not camvalue:match("^%-?%d*%.?%d+i$") and camvalue:match("^%-?%d*%.?%d+") or 0
+							y = camvalue:match("(%-?%d*%.?%d*)i$") or 0
+							if y == "" or y == "-" then y = y.."1" end
 							anim.fromcam = anim.trackplayer and {x = anim.trackplayer.offx, y = anim.trackplayer.offy} or {x = cam.x, y = cam.y}
 							anim.tocam = {x = (tonumber(x) or 0) * scene.cellsize, y = (tonumber(y) or 0) * scene.cellsize}
 						end
 						break
+					end
+				end
+				if not recorddata.imageexport then
+					for i,v in ipairs(recorddata.scriptsordered) do
+						if v.update and v.update.animationStep then
+							ExecuteScript(v.update.animationStepcallback, v)
+						end
 					end
 				end
 			end
@@ -18334,14 +18786,22 @@ function love.update(dt)
 		end
 		if recording and anim.fromcam and anim.tocam then
 			anim.ltime = anim.ltime + dt
-			local lerp = math.min(1, anim.ltime / (anim.lerptotal * delay))
-			anim.lerpdebug = lerp
+			anim.camtween:set(anim.ltime)
+			local lerp = anim.camtween.subject[1]
+			anim.lerpdebug = (lerp*100).."\nltime: "..anim.ltime.."\nlerptotal: "..(anim.lerptotal or "nil")
 			if not anim.trackplayer then
 				cam.x = (anim.fromcam.x or cam.x) + (anim.tocam.x or cam.x) * lerp
 				cam.y = (anim.fromcam.y or cam.y) + (anim.tocam.y or cam.y) * lerp
 			else
 				anim.trackplayer.offx = (anim.fromcam.x or 0) + (anim.tocam.x or 0) * lerp
 				anim.trackplayer.offy = (anim.fromcam.y or 0) + (anim.tocam.y or 0) * lerp
+			end
+		end
+	end
+	if recording and not recorddata.imageexport then
+		for i,v in ipairs(recorddata.scriptsordered) do
+			if v.update and v.update.afterTick then
+				ExecuteScript(v.update.afterTickcallback, v)
 			end
 		end
 	end
@@ -18383,7 +18843,7 @@ function love.update(dt)
 	if (love.mouse.isDown(1) or love.mouse.isDown(2) or love.mouse.isDown(3)) and hoveredbutton and hoveredbutton.ishold then
 		hoveredbutton.onclick(hoveredbutton)
 	end
-	if love.mouse.isDown(1) and chosen.id ~= 0 and not hoveredbutton and not puzzle and placecells and not recording then
+	if love.mouse.isDown(1) and chosen.id ~= 0 and not hoveredbutton and not puzzle and placecells and not recording and not cataloging then
 		local x = math.floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom)
 		local y = math.floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom)
 		for cy=y-math.ceil(chosen.size*.5)+(chosen.shape == "Square" and 1 or 0),y+math.floor(chosen.size*.5) do
@@ -18414,14 +18874,14 @@ function love.update(dt)
 				end
 			end
 		end	
-	elseif love.mouse.isDown(1) and not hoveredbutton and not puzzle and selection.on and not recording then
+	elseif love.mouse.isDown(1) and not hoveredbutton and not puzzle and selection.on and not recording and not cataloging then
 		local x = math.floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom)
 		local y = math.floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom)
 		selection.x = math.min(x,selection.ox)
 		selection.y = math.min(y,selection.oy)
 		selection.w = math.max(selection.ox-selection.x + 1,x-selection.x + 1)
 		selection.h = math.max(selection.oy-selection.y + 1,y-selection.y + 1)
-	elseif (love.mouse.isDown(2) or love.mouse.isDown(1) and chosen.id == 0) and not hoveredbutton and not puzzle and placecells and not recording then
+	elseif (love.mouse.isDown(2) or love.mouse.isDown(1) and chosen.id == 0) and not hoveredbutton and not puzzle and placecells and not recording and not cataloging then
 		local x = math.floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom)
 		local y = math.floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom)
 		for cy=y-math.ceil(chosen.size*.5)+(chosen.shape == "Square" and 1 or 0),y+math.floor(chosen.size*.5) do
@@ -18525,6 +18985,11 @@ function love.update(dt)
 							lockedz = 0
 							c.vars.input = nil
 							PlaceCell(cx,cy,c,lockedz)
+						elseif chosen.id == "target_tool" or chosen.id == "unique_tool" then
+							lockedz = 0
+							c.vars.targetgroup = nil
+							c.vars.unique = nil
+							PlaceCell(cx,cy,c,lockedz)
 						else
 							PlaceCell(cx,cy,getempty(),lockedz)
 						end
@@ -18544,7 +19009,7 @@ function love.update(dt)
 		mx,my = love.mouse.getX(),love.mouse.getY()
 	end
 	freezecam = freezecam and not paused
-	if not freezecam and not typing and not mainmenu and not recording then
+	if not freezecam and not typing and not mainmenu and not recording and not cataloging then
 		if ctrl() then
 			if love.keyboard.isDown("w") or love.keyboard.isDown("up") then cam.tary = cam.tary - math.min(dt*1200,100) end
 			if love.keyboard.isDown("s") or love.keyboard.isDown("down") then cam.tary = cam.tary + math.min(dt*1200,100) end
@@ -18606,6 +19071,13 @@ function love.update(dt)
 		love.keyboard.setTextInput(true)
 	else
 		love.keyboard.setTextInput(false)
+	end
+	if recording and not recorddata.imageexport then
+		for i,v in ipairs(recorddata.scriptsordered) do
+			if v.update and v.update["end"] then
+				ExecuteScript(v.update.endcallback, v)
+			end
+		end
 	end
 end
 
@@ -19164,6 +19636,31 @@ function DrawEffects(cell,cx,cy,crot,fancy,scale)
 	elseif cell.vars.tag == 3 then DrawBasic(GetTex("tag_player"),cx,cy,crot,fancy,scale) end
 	if cell.vars.ghostified == 1 then DrawBasic(GetTex("ghostified"),cx,cy,crot,fancy,scale)
 	elseif cell.vars.ghostified == 2 then DrawBasic(GetTex("ungeneratable"),cx,cy,crot,fancy,scale) end
+	if cell.vars.targetgroup and scale == 1 and rendercelltext then
+		DrawBasic(GetTex("targeteffect"),cx,cy,0,fancy,scale)
+		local r,g,b,a = love.graphics.getColor()
+		love.graphics.setColor(0,0,0,a)
+		love.graphics.printf(cell.vars.targetgroup,cx-.475*cam.zoom,cy-.1125*cam.zoom,40,"center",0,cam.zoom/40,cam.zoom/40)
+		love.graphics.setColor(r,g,b,a)
+		love.graphics.printf(cell.vars.targetgroup,cx-.5*cam.zoom,cy-.1375*cam.zoom,40,"center",0,cam.zoom/40,cam.zoom/40)
+	end
+	if cell.vars.targetgroup and absolutedraw and rendercelltext then
+		DrawBasic(GetTex("targeteffect"),cx,cy,0,fancy,scale)
+		local r,g,b,a = love.graphics.getColor()
+		love.graphics.setColor(0,0,0,a)
+		love.graphics.printf(cell.vars.targetgroup.."",cx-.475*20*scale,cy-.1125*20*scale,40,"center",0,20*scale/40,20*scale/40)
+		love.graphics.setColor(r,g,b,a)
+		love.graphics.printf(cell.vars.targetgroup.."",cx-.5*20*scale,cy-.1375*20*scale,40,"center",0,20*scale/40,20*scale/40)
+	end
+	if cell.vars.unique then DrawBasic(GetTex("uniqueeffect"),cx,cy,crot,fancy,scale)
+		if dodebug then
+			local r,g,b,a = love.graphics.getColor()
+			love.graphics.setColor(0,0,0,a)
+			love.graphics.print(cell.vars.unique,cx-.175*cam.zoom,cy-.1125*cam.zoom,0,cam.zoom/40,cam.zoom/40)
+			love.graphics.setColor(r,g,b,a)
+			love.graphics.print(cell.vars.unique,cx-.2*cam.zoom,cy-.1375*cam.zoom,0,cam.zoom/40,cam.zoom/40)
+		end
+	end
 	if cell.vars.coins and scale == 1 and rendercelltext then
 		DrawBasic(GetTex("coins"),cx,cy,0,fancy,scale)
 		local r,g,b,a = love.graphics.getColor()
@@ -19264,14 +19761,13 @@ function DrawCell(cell,x,y,interpolate,alpha,scale,meta)
 	local lerp = itime/delay
 	interpolate = interpolate
 	if not forcespread[cell.vars.forceinterp] then cell.vars.forceinterp = nil end
-	local floor = (recording and recorddata.animation.cellposition == "aliased") and (function(x) return x end) or math.floor
 	if cell.vars.forceinterp then
 		local force = forcespread[cell.vars.forceinterp]
-		cx,cy,crot = floor(force.x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),floor(force.y*cam.zoom-cam.y+cam.zoom*.5+300*winym),force.rot*math.halfpi
+		cx,cy,crot = math.floor(force.x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(force.y*cam.zoom-cam.y+cam.zoom*.5+300*winym),force.rot*math.halfpi
 	elseif interpolate then
-		cx,cy,crot = floor(math.graphiclerp(cell.lastvars[1],x,lerp)*cam.zoom-cam.x+cam.zoom*.5+400*winxm),floor(math.graphiclerp(cell.lastvars[2],y,lerp)*cam.zoom-cam.y+cam.zoom*.5+300*winym),math.graphiclerp(cell.rot-cell.lastvars[3],cell.rot,lerp)*math.halfpi%(math.pi*2)
+		cx,cy,crot = math.floor(math.graphiclerp(cell.lastvars[1],x,lerp)*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(math.graphiclerp(cell.lastvars[2],y,lerp)*cam.zoom-cam.y+cam.zoom*.5+300*winym),math.graphiclerp(cell.rot-cell.lastvars[3],cell.rot,lerp)*math.halfpi%(math.pi*2)
 	else
-		cx,cy,crot = floor(x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),floor(y*cam.zoom-cam.y+cam.zoom*.5+300*winym),cell.rot*math.halfpi
+		cx,cy,crot = math.floor(x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(y*cam.zoom-cam.y+cam.zoom*.5+300*winym),cell.rot*math.halfpi
 	end
 	local canv = love.graphics.getCanvas()
 	scale,alpha = scale or 1,alpha or 1
@@ -19280,9 +19776,9 @@ function DrawCell(cell,x,y,interpolate,alpha,scale,meta)
 		drawsst = {x=cx,y=cy}
 		anysst = true
 	end
-	if cell.id ~= 0 and cell.vars.paint ~= "I" then 
+	if (cell.id ~= 0 or cell.forcedraw) and cell.vars.paint ~= "I" then 
 		local fancy = fancy
-		if x == floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom) and y == floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom) then
+		if x == math.floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom) and y == math.floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom) then
 			fancy = true
 		end
 		love.graphics.setColor(1,1,1,alpha)
@@ -19389,12 +19885,51 @@ function GetDrawBounds(off, bg)
 		"rightdown"
 	end
 end
+
+local fonts = {
+	nokia = font,
+	serifbold = serifbold,
+	serif = serif,
+	lmr = lmr
+}
+function DrawGraphic(graphic)
+	local cx, cy = math.floor(graphic.position[1]*cam.zoom-cam.x+cam.zoom*.5),math.floor(graphic.position[2]*cam.zoom-cam.y+cam.zoom*.5)
+	local sx, sy = graphic.scale[1] * cam.zoom, graphic.scale[2] * cam.zoom
+	if graphic.align == "camera" then
+		cx, cy = graphic.position[1], graphic.position[2]
+		sx, sy = sx / cam.zoom, sy / cam.zoom
+	end
+	local r, g, b, a = love.graphics.getColor()
+	love.graphics.setColor(graphic.color)
+	if graphic.type == "label" then
+		local prevfont = love.graphics.getFont()
+		love.graphics.setFont(fonts[graphic.font])
+		love.graphics.print(graphic.text, cx, cy, graphic.rotation, sx, sy, graphic.skew[1], graphic.skew[2])
+		love.graphics.setFont(prevfont)
+	elseif graphic.type == "texture" then
+		love.graphics.draw(GetTex(graphic.file), cx, cy, graphic.rotation, sx, sy, graphic.skew[1], graphic.skew[2])
+	elseif graphic.type == "canvas" then
+		love.graphics.draw(graphic.canvas, cx, cy, graphic.rotation, sx, sy, graphic.skew[1], graphic.skew[2])
+	elseif graphic.type == "cell" then
+		local cell = getempty()
+		cell.id = graphic.id
+		cell.vars = graphic.vars or {}
+		cell.rot = graphic.rotation
+		if graphic.align == "board" then
+			DrawCell(cell, graphic.position[1], graphic.position[2], false, graphic.color[4], graphic.scale[1])
+		else
+			DrawAbsoluteCell(cell, graphic.position[1], graphic.position[2], false, graphic.color[4], graphic.scale[1])
+		end
+	end
+	love.graphics.setColor(r, g, b, a)
+end
 	
 CELLCOL = {1,1,1}
 function DrawGrid()
+	local anim = recorddata.animation
 	if love.graphics.getWidth() ~= cellcanv:getWidth() or love.graphics.getHeight() ~= cellcanv:getHeight() then
 		cellcanv:release()
-		cellcanv = love.graphics.newCanvas(love.graphics.getWidth(),love.graphics.getHeight())
+		cellcanv = love.graphics.newCanvas(love.graphics.getWidth(),love.graphics.getHeight()) -- for anti aliasing CRAP.
 	end
 	local texture
 	local texsize
@@ -19407,7 +19942,15 @@ function DrawGrid()
 	local startx,endx,starty,endy = GetDrawBounds(1, true)
 	local gcanvas = recording and recorddata.canvas or nil
  	love.graphics.setCanvas(gcanvas)
-	if recording then love.graphics.clear(recorddata.imageexport and renderbg and voidcolor or {0,0,0,0}) end
+	if recording and recorddata.imageexport then love.graphics.clear(renderbg and voidcolor or {0,0,0,0})
+	elseif recording then love.graphics.clear(voidcolor) end
+	if recording and not recorddata.imageexport then 
+		for l=anim.lowestlayer, -2 do
+			for i,v in ipairs(anim.layers[l] or {}) do
+				DrawGraphic(v)
+			end
+		end
+	end
 	for y=starty,endy do
 		for x=startx,endx do
 			local p = GetPlaceable(x,y) or 0
@@ -19419,17 +19962,27 @@ function DrawGrid()
 					local cx,cy = math.floor(x*cam.zoom-cam.x+400*winxm)+.49,math.floor(y*cam.zoom-cam.y+300*winym)+.49
 					love.graphics.rectangle("fill",cx,cy,cam.zoom,cam.zoom)
 				end
-			elseif cam.zoom > 8 or not recording or not recorddata.imageexport or renderempty or p ~= 0 then
+			elseif (cam.zoom > 8 or p ~= 0) and (not recording or not recorddata.imageexport or renderempty) then
 				love.graphics.setColor(CELLCOL)
 				local cx,cy = math.floor(x*cam.zoom-cam.x+cam.zoom*.5+400*winxm)+.49,math.floor(y*cam.zoom-cam.y+cam.zoom*.5+300*winym)+.49
 				local pt = {id=p}
 				texture = GetTex(GetDrawTexture(pt,x,y,0,fancy,1),"Xbg")
 				texsize = texture.size
-				love.graphics.draw(texture.normal,cx,cy,DrawRot(pt,x,y,0),
+				if recording then
+					pt = getempty()
+					pt.id = p
+					pt.forcedraw = true
+					DrawCell(pt,x,y)
+				else
+					love.graphics.draw(texture.normal,cx,cy,DrawRot(pt,x,y,0),
 				math.ceil(cam.zoom)/texsize.w*xScaleMult(pt,x,y,0),
 				math.ceil(cam.zoom)/texsize.h*yScaleMult(pt,x,y,0),texsize.w2,texsize.h2)
+				end
 			end
 		end
+	end
+	for i,v in ipairs(recording and not recorddata.imageexport and anim.layers[-1] or {}) do
+		DrawGraphic(v)
 	end
 	love.graphics.setCanvas(cellcanv)
 	love.graphics.setShader()
@@ -19447,7 +20000,7 @@ function DrawGrid()
 			love.graphics.rectangle("line", drawsst.x-cam.zoom/2, drawsst.y-cam.zoom/2, cam.zoom, cam.zoom)
 		end
 		for i,force in ipairs(forcespread) do -- edge case crappery
-			if overallcount >= force.revealtick and force.forcetype == "push" then
+			if step >= force.revealtick and (force.forcetype == "push" or force.forcetype == "swap") then
 				DrawCell(force.drawcell,force.x,force.y,false)
 			end
 		end
@@ -19455,19 +20008,28 @@ function DrawGrid()
 			local x,y,rot = force.x, force.y, force.rot
 			local cx,cy,crot
 			local lerp = itime/delay
-			local floor = (recording and recorddata.animation.cellposition == "aliased") and (function(x) return x end) or math.floor
 			if true then
-				cx,cy,crot = floor(math.graphiclerp(force.lx,force.x,lerp)*cam.zoom-cam.x+cam.zoom*.5+400*winxm),floor(math.graphiclerp(force.ly,force.y,lerp)*cam.zoom-cam.y+cam.zoom*.5+300*winym),math.graphiclerp(force.ldir,force.dir,lerp)*math.halfpi%(math.pi*2)
+				cx,cy,crot = math.floor(math.graphiclerp(force.lx,force.x,lerp)*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(math.graphiclerp(force.ly,force.y,lerp)*cam.zoom-cam.y+cam.zoom*.5+300*winym),math.graphiclerp(force.ldir,force.dir,lerp)*math.halfpi%(math.pi*2)
 			else
-				cx,cy,crot = floor(force.x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),floor(force.y*cam.zoom-cam.y+cam.zoom*.5+300*winym),force.dir*math.halfpi
+				cx,cy,crot = math.floor(force.x*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor(force.y*cam.zoom-cam.y+cam.zoom*.5+300*winym),force.dir*math.halfpi
 			end
 			DrawBasic(GetTex("force"..force.forcetype),cx,cy,crot,fancy,1,1,1)
 			DrawCenterNumber(force.bias,cx,cy,fancy,1)
 		end
+		for i,v in ipairs(recording and not recorddata.imageexport and anim.layers[z] or {}) do
+			DrawGraphic(v)
+		end
+	end
+	if recording and not recorddata.imageexport then 
+		for l=depth, anim.highestlayer do
+			for i,v in ipairs(anim.layers[l] or {}) do
+				DrawGraphic(v)
+			end
+		end
 	end
 	love.graphics.setCanvas(gcanvas)
 	love.graphics.setShader()
-	if fancy then
+	if fancy and (not recording or not recorddata.imageexport or rendershadows) then
 		love.graphics.setColor(0,0,0,.25)
 		love.graphics.draw(cellcanv,shadowdist*cam.zoom,shadowdist*cam.zoom)
 	end
@@ -19521,6 +20083,8 @@ function DrawGrid()
 		love.graphics.setColor(1,1,1,.25)
 		local cx,cy = math.floor((selection.x-.5)*cam.zoom-cam.x+cam.zoom*.5+400*winxm),math.floor((selection.y-.5)*cam.zoom-cam.y+cam.zoom*.5+300*winym)
 		love.graphics.rectangle("fill",cx,cy,selection.w*cam.zoom,selection.h*cam.zoom)
+		love.graphics.setColor(1,1,1,1)
+		love.graphics.printf(selection.w.."x"..selection.h, cx, cy+selection.h/2*cam.zoom-cam.zoom/4, selection.w*20, "center", 0, cam.zoom/20, cam.zoom/20)
 	elseif not hoveredbutton and not puzzle and not recording then
 		local mx = math.floor((love.mouse.getX()+cam.x-400*winxm)/cam.zoom)
 		local my = math.floor((love.mouse.getY()+cam.y-300*winym)/cam.zoom)
@@ -19568,7 +20132,7 @@ function DrawMainMenu()
 				local keysize = math.ceil(math.min(recorddata.canvas:getWidth() / 10, recorddata.canvas:getHeight() / 10))
 				local padding = keysize/4
 				local kx, ky = keysize/2, recorddata.canvas:getHeight()-keysize*2.5-padding
-				local curkey = tonumber(recorddata.animation.input:sub(overallcount+1, overallcount+1), 16) or 0
+				local curkey = tonumber(recorddata.animation.input:sub(step+1, step+1), 16) or 0
 				love.graphics.setColor(0.7, 0.7, 0.7, curkey % 2 == 1 and 1 or 0.2)
 				love.graphics.rectangle("fill", kx+keysize*2+padding*2, ky+keysize+padding, keysize, keysize) -- d
 				love.graphics.setColor(0.3, 0.3, 0.3, curkey % 2 == 1 and 1 or 0.8)
@@ -19612,16 +20176,16 @@ function DrawMainMenu()
 					cm = cm..v.." "
 				end
 			end
-			if overallcount > 0 or not recorddata.initialrecorded then
+			if step > 0 or not recorddata.initialrecorded then
 				recorddata.initialrecorded = true
 				recorddata.canvas:newImageData():encode("png", recorddata.imageexport and "export.png" or "recording/"..recorddata.frame..".png")
 				recorddata.frame = recorddata.frame + 1
 				love.graphics.printf({
 					{1, 1, 1}, "Frame "..recorddata.frame.." ("..string.format("%.02f", recorddata.timer).."s)"
-					.."\nGlobal tick ("..overallcount.."): "..ts, {0, 1, 1}, tm, {1, 1, 1}, te
+					.."\nGlobal tick ("..step.."): "..ts, {0, 1, 1}, tm, {1, 1, 1}, te
 					.."\nCamera {"..string.format("%.02f", cam.x)..", "..string.format("%.02f", cam.y).."}: "..cs, {0, 1, 1}, cm, {1, 1, 1}, ce
-					.."\nController: "..i:sub(0, overallcount), {0, 1, 1}, i:sub(overallcount+1, overallcount+1), {1, 1, 1}, i:sub(overallcount+2, -1)
-					.."\n"..string.format("%.02f%%", (recorddata.animation.lerpdebug or 0) * 100)
+					.."\nController: "..i:sub(0, step), {0, 1, 1}, i:sub(step+1, step+1), {1, 1, 1}, i:sub(step+2, -1)
+					.."\n"..(recorddata.animation.lerpdebug or "")
 					.."\n"..(recorddata.debug or "")
 				}, 50, 50 + recorddata.canvas:getHeight(), settings.window_width - 100, "left")
 			else
@@ -19738,9 +20302,11 @@ function DrawPauseMenu()
 		if not puzzle then
 			love.graphics.print("Border: "..border.." ("..tostring(GetAttribute(bordercells[border],"name"))..")",centerx-150*uiscale,centery-98*uiscale,0,uiscale,uiscale)
 			love.graphics.print("Width",centerx-100*uiscale,centery+38*uiscale,0,uiscale,uiscale)
-			love.graphics.print("Height",centerx+50*uiscale,centery+38*uiscale,0,uiscale,uiscale)
+			love.graphics.print("Height",centerx-25*uiscale,centery+38*uiscale,0,uiscale,uiscale)
+			love.graphics.print("Seed",centerx+50*uiscale,centery+38*uiscale,0,uiscale,uiscale)
 			love.graphics.print(newwidth..(typing == "width" and "_" or ""),centerx-95*uiscale,centery+52*uiscale,0,2*uiscale,2*uiscale) 
-			love.graphics.print(newheight..(typing == "height" and "_" or ""),centerx+55*uiscale,centery+52*uiscale,0,2*uiscale,2*uiscale) 
+			love.graphics.print(newheight..(typing == "height" and "_" or ""),centerx-20*uiscale,centery+52*uiscale,0,2*uiscale,2*uiscale) 
+			love.graphics.print(newseed..(typing == "seed" and "_" or ""),centerx+55*uiscale,centery+52*uiscale,0,2*uiscale,2*uiscale) 
 		end
 		love.graphics.print("UI Scale: "..newuiscale*100 .."%",centerx-150*uiscale,300*winym-10*uiscale,0,uiscale,uiscale)
 	elseif not inmenu and not winscreen and not mainmenu and wikimenu == "export" then
@@ -19825,9 +20391,9 @@ function DrawButtonInfo()
 	end
 end
 
-versiontxt = [[Version #r2.0.2#55aaff_ff00ffw1.3.2
-#xCelLua Machine Wiki Mod created by #ff0000_00ff00aadenboy
-#xOriginal CelLua Machine created by#00ff00_80ff80 KyYay
+versiontxt = [[Version #r2.0.2#7b48cd-dda7f9w2.0.0
+#xCelLua Machine Wiki Mod by #ff0000_00ff00aadenboy
+#xOriginal CelLua Machine by#00ff00_80ff80 KyYay
 #xOriginal Cell Machine by #40a0ff-80c0ffSam Hogan]]
 
 cellcanv = love.graphics.newCanvas(love.graphics.getWidth(),love.graphics.getHeight())
@@ -19839,7 +20405,7 @@ function love.draw()
 		love.graphics.printf(#truequeue,centerx,centery+20,100,"center",0,2,2,50)
 		return
 	end
-	if recording then
+	if recording or cataloging then
 		DrawMainMenu()
 	else
 		DrawMainMenu()
@@ -20003,6 +20569,10 @@ function love.textinput(key)
 		if tonumber(key) then
 			newheight = tonumber(string.sub(tostring(newheight)..key,1,3))
 		end
+	elseif typing == "seed" then
+		if tonumber(key) then
+			newseed = tonumber(newseed..key) or 0
+		end
 	elseif typing == "cellsize" then
 		if tonumber(key) then
 			newcellsize = tonumber(string.sub(tostring(newcellsize)..key,1,3))
@@ -20032,6 +20602,8 @@ function love.keypressed(key,code,repeated)
 				newwidth = tonumber(string.sub(tostring(newwidth),1,(utf8.offset(tostring(newwidth),-1) or 1)-1)) or 0
 			elseif typing == "height" then
 				newheight = tonumber(string.sub(tostring(newheight),1,(utf8.offset(tostring(newheight),-1) or 1)-1)) or 0
+			elseif typing == "height" then
+				newheight = tonumber(newseed..key) or 0
 			elseif typing == "cellsize" then
 				newcellsize = tonumber(string.sub(tostring(newcellsize),1,(utf8.offset(tostring(newcellsize),-1) or 1)-1)) or 0
 			elseif typing == "padding" then
@@ -20442,4 +21014,57 @@ function HandleSecret(str)
 	if postloading then f()
 	else table.insert(truequeue,f) end
 	do return success end
+end
+
+-- https://cellua.miraheze.org/wiki/Drag%26Drop
+function love.filedropped(file)
+	file:open("r")
+	local data = file:read()
+    local filepath = file:getFilename()
+    local filedata = love.filesystem.newFileData(data, filepath)
+    local ext = filedata:getExtension()
+
+    local filepathparts = {}
+    local filesystemseparator = "/"
+    if love.system.getOS() == "Windows" then
+        filesystemseparator = "\\" -- nevermind time 2, so apparently it does use \ after all
+    end
+
+    for v in string.gmatch(filepath,"[^"..filesystemseparator.."]+") do
+        table.insert(filepathparts,v)
+    end 
+    local filename = filepathparts[#filepathparts]
+
+    if ext=="lua" then
+        local opt = love.window.showMessageBox(
+            "Drag&Drop",
+            "You have drag and dropped a lua script. What do you wish to do with it?",
+            {"Run Once","Install as MultiLoader Mod","Cancel",enterbutton = 1, escapebutton = 3}
+        )
+        if opt == 1 then
+            local scriptcontrol = ScriptCellsEnabled -- compatability with other mods is importantn
+            if scriptcontrol then
+                ScriptCellsEnabled = 1
+            end
+
+            local cell = getempty()
+            cell.vars[1]=data
+            ExecuteScriptCell(cell)
+            
+            ScriptCellEnabled = scriptcontrol -- compatability with other mods is importantn
+
+        elseif opt == 2 then
+            love.filesystem.write("Scripts/"..filename,data)
+        end
+    elseif ext=="qta" then
+        local getclipbord = love.system.getClipboardText
+        love.system.getClipboardText = function() return data end
+        buttons["recordvideobtn"].onclick()
+        love.system.getClipboardText = getclipbord
+    else
+	    local getclipbord = love.system.getClipboardText
+        love.system.getClipboardText = function() return data end
+        LoadWorld()
+        love.system.getClipboardText = getclipbord
+    end
 end
