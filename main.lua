@@ -19910,18 +19910,18 @@ function DrawGraphic(graphic)
 		local prevfont = love.graphics.getFont()
 		local font = fonts[graphic.font]
 		font:set(graphic.text)
-		local ox = type(graphic.origin[1]) == "string" and font:getWidth()*graphic.origin[1]:sub(1, -2) or graphic.origin[1]
-		local oy = type(graphic.origin[2]) == "string" and font:getHeight()*graphic.origin[2]:sub(1, -2) or graphic.origin[2]
+		local ox = type(graphic.origin[1]) == "string" and font:getWidth()*graphic.origin[1]:sub(1, -2)/100 or graphic.origin[1]
+		local oy = type(graphic.origin[2]) == "string" and font:getHeight()*graphic.origin[2]:sub(1, -2)/100 or graphic.origin[2]
 		love.graphics.draw(font, cx, cy, graphic.rotation, sx, sy, ox, oy, graphic.skew[1], graphic.skew[2])
 	elseif graphic.type == "texture" then
 		local file = GetTex(graphic.file)
-		local ox = type(graphic.origin[1]) == "string" and file:getWidth()*graphic.origin[1]:sub(1, -2) or graphic.origin[1]
-		local oy = type(graphic.origin[2]) == "string" and file:getHeight()*graphic.origin[2]:sub(1, -2) or graphic.origin[2]
+		local ox = type(graphic.origin[1]) == "string" and file:getWidth()*graphic.origin[1]:sub(1, -2)/100 or graphic.origin[1]
+		local oy = type(graphic.origin[2]) == "string" and file:getHeight()*graphic.origin[2]:sub(1, -2)/100 or graphic.origin[2]
 		love.graphics.draw(file, cx, cy, graphic.rotation, sx, sy, ox, oy, graphic.skew[1], graphic.skew[2])
 	elseif graphic.type == "canvas" then
 		local div = graphic.align == "board" and 1/20 or 1
-		local ox = type(graphic.origin[1]) == "string" and graphic.canvas:getWidth()*graphic.origin[1]:sub(1, -2) or graphic.origin[1]
-		local oy = type(graphic.origin[2]) == "string" and graphic.canvas:getHeight()*graphic.origin[2]:sub(1, -2) or graphic.origin[2]
+		local ox = type(graphic.origin[1]) == "string" and graphic.canvas:getWidth()*graphic.origin[1]:sub(1, -2)/100 or graphic.origin[1]
+		local oy = type(graphic.origin[2]) == "string" and graphic.canvas:getHeight()*graphic.origin[2]:sub(1, -2)/100 or graphic.origin[2]
 		love.graphics.draw(graphic.canvas, cx, cy, graphic.rotation, sx*div, sy*div, ox, oy, graphic.skew[1], graphic.skew[2])
 	elseif graphic.type == "cell" then
 		local cell = getempty()

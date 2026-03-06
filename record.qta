@@ -1,70 +1,326 @@
 [board]
-  {level} ::K3\::;1g;1g;1;eNrt0zEOgzAMRuHrMFWOCQlDLlCJhdlTxy6oQ+8vaCQfIe7A+6Z/e4gkIj/T8bCUTBcZq3dm09lHleF6ajUtfRTT7EN8qAR9xnL9Yh81MJqCUteJlqBUNg0qVb+v1S9RHv9ScE/Z2uf1Pr6tPVtsbdr2/8U5eAAAAAAAAAAAAAAAcDMnOJaCFw==;::
-  {seed} 0
-  {camera} 1 10
-  {cellsize} 40
-  {capture} 9 7
+  {level} ::K3\::;1g;1g;1;eNrt1jEOgCAMBdDrOLLp/U+mA6AkOpjQOvjeZBzaAOVrKQC8t6xbSo+4PkflXvz6/PRmyobVmlH9xirtsbeevpl3/eqpnSsNO8NxfaFTOZxe8MxnXK3sq5y3sg82kP99+1JmLGuWXRh/cuIfxD/iX/yD+Ef8i38Q/wAAaXYG1XH+;::
+  {camera} 17 10
+  {cellsize} 8
+  {capture} 60 40
 
 [animation]
-  {defaultspeed} 0.1
+  {defaultspeed} 0.2
   {fps} 30
-  {ticks}  0 -> 100
+  {ticks}  0 -> 30
 
-[script]
-  {initial} ::
-  local quanta = require("quanta")
-    self.t = -1/30
-    self.canvas = recorddata.graphics[1].canvas
-    self.text = love.graphics.newText(font, "w2.0.0 is out!!")
-    self.shader = love.graphics.newShader([[
-        uniform float size;
-        uniform vec2  translate;
-        uniform float rotate;
+[board]
+  {level} ::K3\::;1g;8;1;eNozMBguQMPcAoioyBgkLtHIVEwf6i4ZPHEzHAAAooi0aw==;::
+  {camera} 42 1
+  {cellsize} 20
+  {capture} 23 8
 
-        vec4 effect(vec4 color, Image tex, vec2 tpos, vec2 spos) {
-            vec4 tcolor = Texel(tex, tpos);
-            /**/ spos   = spos + translate;
-            vec2 rpos   = vec2(
-                spos.x * cos(rotate) - spos.y * sin(rotate),
-                spos.x * sin(rotate) + spos.y * cos(rotate)
-            );
-            float gradientPos = (rpos.x + rpos.y) / size;
-        
-            vec3 rainbowColor = vec3(
-                sin(gradientPos + 0.0 * 3.14159 / 3.0),
-                sin(gradientPos + 2.0 * 3.14159 / 3.0),
-                sin(gradientPos + 4.0 * 3.14159 / 3.0)
-            );
-            rainbowColor = 0.5 * (rainbowColor + 1.0);
-            return vec4(rainbowColor, tcolor.w) * color;
-        }
-    ]])
-    self.shader:send("rotate", math.rad(45))
-  ::
-  {update:}
-    {:beforeTick} ::
-      self.t = self.t + 1/30
-      self.shader:send("size", 20)
-      local curc = love.graphics.getCanvas()
-      local curs = love.graphics.getShader()
-      love.graphics.setCanvas(recorddata.graphics[1].canvas)
-      love.graphics.clear()
-      love.graphics.setShader(self.shader)
-      love.graphics.setColor(1, 1, 1)
-      local scale = math.abs(math.sin(self.t*math.pi*1))*0.5+1.5
-      self.text:set("w2.0.0 is out!!")
-      love.graphics.draw(self.text, 90, 30, math.sin(self.t*math.pi*3)*0.1, scale, scale, self.text:getWidth()/2, self.text:getHeight()/2)
-      love.graphics.setShader(curs)
-      love.graphics.setColor(1, 1, 1, 0.8)
-      self.text:set("(and w2.0.1)")
-      love.graphics.draw(self.text, 130, 45, math.sin(self.t*math.pi)*0.1, 1, 1, self.text:getWidth()/2, self.text:getHeight()/2)
-      love.graphics.setCanvas(curc)
-    ::
+[animation]
+  {defaultspeed} 0.2
+  {fps} 30
+  {cellposition} aliased
+  {ticks} 0 -> 1 -> 12 -> 16 -> 28 -> 32
+  {camera} 0 -> 1 -> 11 -> -11 -> 12 -> 19
+
+  [board]{level}::K3\::;u;u;1;eNozMBjBoKwICoqxyRZqmHlqhFZrmLmikfnYVYOkQRqibZLzcwtSc3JSU2wMgUKofMLyQEtw2AC2HVW5SzYCYRqFz6UY5hgmowqh84FKMBwPd6mGeSgxbiXCDgp9AUe43YotVMmIJ3R5/C51xSA9saouLYCCEoNRQE8AABi2OKY=;::
+  {camera} 6 5 {cellsize} 20 {capture} 22 18
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 40
+
+  [board]{level}::K3\::;z;D;1;eNrNVk1vwjAM/TvezWlZuVhI3Wlo6mUr2yHsUAoqRRVCrBri30+dVkjdDxL6tdwSPb/3nNhuEf/tgjSRwpYWShslRcfgex0fyZJ0COJ9Sg+Tr8j1xnADM/vqB8fwA6tJLktz+jty1CPF7thmb6xPOiRBuAlWyeaDGndGRFUHBrEm0WMF529sZyXpsKdtZarVXXb4pN0JDb27w7AZqHo0OfWDshfpnjLiEC1aDV6OqIzQAg1Aq9eDRp0K/lmKx8J3Ilxcts/4hu8CkXAp4PVFgXVjJWOdK6zV2uCfmMer+60UxQ9fUwVAHDIWrZnIONYqB0Pnjef8/qGo3Qb+jlu9JBFJMVVvwXuqlSinoDnXm5IAz1XluZ9CvZT1B5udzHWxjKOaEjFH9bd+ALuDHl0=;::
+  {camera}1 1{cellsize}14{capture}35 39
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 36
+
+  [board]{level}::K3\::;z;D;1;eNozMBi0QKMkJ9rQONrIINrYINomvSixLCWzyMZoIOzXsDNGuIBe1ieZQGkzZKfQ3yEEQKxNQU5icmpiUk5quA1eHkkGYRMgQS8pugdKMyxWjUEJzIwyZ1AUelSMROpZRG8eGQ4mTRH2osUMuWijiWU08gO6EqKMJcJcdBVYdRCliA7GEpfrSMqbGiGV0YamBhrJoQYxhhpB3tSxAmSUJ8hMjZBykPEI2zKiDU3wR5NGZjLRJR2axhR0JbCUbwas1DVCssB2w52SHm1oruHrhNV2IotHDPs1fB0hBqOEMdRMuhUrIJegRnI6ciwQKUU7AACBcq3E;::
+  {camera}1 1{cellsize}14{capture}35 39
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 36
+
+  [board]{level}::K3\::;1g;1g;1;eNrt07ENwyAQBdB1KFkhhUfwAEnzB8j+UoxkRy5TGKzY7xUcorgToF/rmTJgRLLfJN+DQ5T3vOtanq0mSz180towWeu2S4fnamvXu2xfn34/cy3/n5Q6KCfl9ZAUSZGUH5IySQoAAAAAAAAAN/QBp5mMzA==;::
+  {camera}20 1{cellsize}20{capture}27 24
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 36
+  [board]{level}::K3\::;1g;1g;1;eNrt0zENADAIAEE7jGiCof4dVEFXEpo7Az99JgAAAFudF41vGxOi2lwAAAAAACx1AREGbwI=;::
+  {camera}39 24{cellsize}20{capture}29 21
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 64
+  [board]{level}::K3\::;1g;1g;1;eNrt07EJwDAMBMB1VAoyRYoMkFaNyxTeHzxBcJPCDneofyRemQAAAADAMtoLGVHnb68Vx/PJaEnU5ac0cbZlv7Vk8QwAAIANDIEHv7A=;::
+  {camera}17 51{cellsize}20{capture}20 17
+  [animation]{defaultspeed}0.2{fps}30{cellposition}aliased{ticks}0 -> 1 -> 40 -> 46{camera}0 -> 1 -> 39 -> 0
+
+  [board]{level}::K3\::;1g;1g;1;eNrtlL2OwjAQhF/HBTrFp4j3cA0SEldQ7q4bCl6eGVMAxfEja7v54kQpIk88O7vLIoQQQgghhBBCCCGEEEIIIXLpxssDzwjvPUMjzHo3PpwikaIR3N7CwnGKbhka5mPvIWUQy9Dwm0vQ8fAkr3gGiz4cI1ObrXee6uG0iAIB22wqV2upp9frUZquIcytsVj4hwnhEj+7WkvdlOPfm/Xbln0tccH3D0ZHBExozZAZt5nAnNayPbxe61PLsb7QhBtsvBnl/0o8bEa/3SaHeVJUcQIGCQbiThodQTgC2RLfBOR4/nh4MAocTqwM3lPc8jHLMc3ZeDlD0EemmWb2t6WcQwghhBDfcgWMOq4X;::
+  {camera}18 59{cellsize}10{capture}47 26
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 >> 10 -> 82
+  {input}::1111111111111111...444..............................4.........88888888888888888888888888::
+
+  [board]{level}::K3\::;p;c;1;eNozMCAGpKengzGmRDVQIj6dBB14gYapE3aJaiCkCojXMHUB03AbHdFIJGEDX5zmAAAR6z/U;::
+  {camera}11 1{cellsize}40{capture}13 12
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 8
+
+  [board]{level}::K3\::;1g;1g;1;eNrt0kELgkAQhuFfIwwksrsG6aFDhw7eousGEUEdvOTZP99iaoFhQq4SvQ8Ds3iZj3GUmoHEwfAaZWLiKkmqPhM5ZVZra9SvC0RH3fK6Or2uWhG5DR60FKXrcjtbbdw+JT0237ycSvXjlDX6GUby0I3cb+Wa9fd088joJ9gutPpizfIlWD04kFVZb6f78Bvq3XEs2mBNini04+gEqK6kPZ3p5n66haE9L6dK3HMj3z0WCgAAAAAAAAAAAAAAAH/vDmh2uRc=;::
+  {camera}13 1{cellsize}20{capture}25 14
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 24
+
+  [board]{level}::K3\::;1g;1g;1;eNrt2ksOwjAMBNDrsPQCsecq3P8QIIEqqqb52M7Ehhmxn6dK0MRGhGF+MZfbFVLy/oCKHndE3VYmkMKvulcRoHJX+CmbXnso3QonVxeKBVRerN6VTqw/KT8UTyNUAIXySYwqQmCQBuMEMIHShFQQ7pwuTBXiTOoECRDVTWpiHFkDqC6QG20Q1oly4g3jBApU8AZgDkQVcBBnZqqRw0Aj1QAVMNZEVSENXCNWDVWTHcAGrJLtghY43IltBK+jO5AV+H9/6pL1C5ryxzDZCyfVyzzRISnNwTPBIT78RSj4RTL0JTzo4CLkkCfgMCzcwDDQMDXMgDnIwD3E8mHxAmbp8mnh0m3ZonHBUhW+OAYvxqFLf9AfGYRhGIZhGIZhGIbB5wmLQLUU;::
+  {camera}21 27{cellsize}20{capture}21 21
+  [animation]{defaultspeed}1{fps}30{ticks}0 -> 4
+  [board]{level}::K3\::;1g;1g;1;eNrtmzEOwzAMA7+TMVN+kld07P+BLnlAaosUTZPI0EmAdWbryOx5RrvpuD4rPlnds7rvvdjzP7vZnT3STfEtMtNN9b0/y01459dwG/ZBWWf1XFDUWT0PVDITc0A1M3KNF6tScEN5lxW8gOIl4AQcL0qV4Y73uQLY8R5PMFg1OYLBClyntPtcd1C6z/IGmxPRGVxOsEpwEniXkEngPNLJCOyQLkaAWi1UMG5po1LpFRU+4M89fKy84/ONZvtb43geMDuvrXxyNn6P8XzftJsJrDWRsZ6Juc4vDefM6pN98/sU3/svy7tKvRth+7t357yEab5FITm0QS7LO09nm4HsSZRukdF1z1f75uLzV4YoiqIoiqIoiiKQfke5M+4=;::
+  {camera}21 26{cellsize}20{capture}21 21
+  [animation]{defaultspeed}1{fps}30{ticks}0 -> 4
+
+  [board]{level}::K3\::;1g;1g;1;eNrt1DEKwCAQBMDvpLTMdyTF/f8HKYQUkiNFVEKYYbFRWO4KSwGAL9sX9WzH/bmuL3l1ZXRrch8xcPDnpi5zNx7Nb3qy1OrjAAAAAAAAAHjlBL17az4=;::
+  {camera}5 16{cellsize}16{capture}30 12
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 18 -> 30{camera}0 -inOutBounce> 18 -> 0{cellposition}aliased
+  [board]{level}::K3\::;1g;1g;1;eNrt0yEWQBEARNHt/CiqgnUIP1LtX6BLAufeM/2lCQGAjdjy8cbXy9xLpX/toVKsySEAAAAAAAAA4DYD77hcIQ==;::
+  {camera}21 13{cellsize}40{capture}9 8
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 1 -> 2{camera}0 -> 0.5 -> 0.5{cellposition}aliased
+
+  [board]{level}::K3\::;1m;1m;1;eNrt1TEOwjAMheHTIGVgCFsvgER7GJaMXB4n7yXlAlhC/MhCFR2+J9sJ5XYtFEX9bNWEDyoqKioqKioqKioqKioqKioqKur/qOXYej0uZR/Pz/t4fvXvqPFLYprge6DW00SIeFYUPcTbPbM3siPKasZe3SG17Wi5aaIxUWqSxuSu6NWWmabOGTWvzlojjyy5Nz1Es+0trp7XyJTeGw0oeJVmN9c590ytEzS25DznTpa8N2s684LxIs8FT75v2rklvnjqx0HLTKNrRnPROfL5WoNruZM6l8a8k80biP9kVFRUVFRUVFRUVFRUVFRUVFRU1O+qFEX9UL0BgEUn2w==;::
+  {camera}3 3{cellsize}5{capture}101.8 101.8
+  [animation]{defaultspeed}0.05{fps}30{ticks}0 -> 200
+  [board]{level}::K3\::;1g;1g;1;eNrt2jsOQEAUQNHtvEJBZwOaWYzG/hMRplLIyPjFkUt7xjwSheiakCRJufaig81+p320kPKF8vn8s36k3gR+7C/zz6cp8Pn3+L492Ww2m81ms9lsNpvNZrPZ7C/akaZH77y2X7rvdf0PPXGVN967xmaz2eXE7qeGm/QYh+1i6my2JElamwGUU1Mn;::
+  {camera}6 6{cellsize}9{capture}60 50
+  [animation]{defaultspeed}0{fps}30{ticks}0 -> 345
+  [board]{level}::K3\::;1g;1g;1;eNrt2bENgCAQBdB1KCy0cwEbh3H/UlsTY0QBCTzz+8cBIYeEaQgieTJm/lgsFovFYjVnJW9A4sZVcysVXUn8vBOJf4phnY/0oba/ns/nNU5Neb5mHGPx1ejLDNvSR6WXhdpHzFzm3Zn42j3v4pKylWUymf+YxR9VvvfvTCaTWe2PUbV0/ELAYrFYLBaLxWKxKr3aSEvZAbsP27A=;::
+  {camera}3 3{cellsize}5{capture}94 94
+  [animation]{defaultspeed}0{fps}30{ticks}0 -> 200
+  [board]{level}::K3\::;1g;1g;1;eNrt1SEBAAAIA8E6yNWgf6GVQCDuGvzMEgAAAAAAAAB4YNYGAOB7DzIK4IZUvQ==;::
+  {camera}54 65{cellsize}10{capture}48 37
+  [animation]{defaultspeed}0{fps}30{ticks}0 -> 300
+  [board]{level}::K3\::;1g;1g;1;eNrt0zENAAAIwDA7nJjADv5PPPBBWglLlgksRJcI8Hc9iwsFAAAAAAAAwGUDUcxWFg==;::
+  {camera}10 6{cellsize}10{capture}22 20
+  [animation]{defaultspeed}0.2{fps}30{cellposition}aliased{ticks}0 -> 24{camera}0 -> 3+3i
+  [board]{level}::K3\::;1g;1g;1;eNrt1LENgCAURdF1XmGhnTOwjvsnlEDUysKIh/yCgubkAtmWnGa9X7k6P8dQU1NTU1NTU1NTU1NTU1NTP1enHGpTT6tu93u46XpT+8nVpqampqampqampqampqampqampqb+vjplV/sX6la62+ntdatNTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU39wlRnKNCB;::
+  {camera}6 42{cellsize}10{capture}31 13
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 25
+  [board]{level}::K3\::;1g;1g;1;eNrt1LEJACAMBMB1UljoGq7j/mApooJgJxe+THN8SJQUS/J5Yrf/R6ipqampqampqampqampqanf1VGbtqm/VY/7ni5d39Q+ubapqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqe/SARDfzpk=;::
+  {camera}6 14{cellsize}10{capture}31 31
+  [animation]{defaultspeed}0{fps}30{ticks}0 -> 259
+  [board]{level}::K3\::;1g;1g;1;eNrtzaERACAMALF1Kiu7AKbDsL/EoDFcXSLefiYAwK/oGh7sdQMAAAAAAAAATwcwRVU6;::
+  {camera}23 18{cellsize}20{capture}12 10
+  [animation]{defaultspeed}0.2{fps}30{cellposition}aliased{ticks}0 -> 3{camera}0 -> -1-i
+  [board]{level}::K3\::;1g;1g;1;eNrt0TENAAAIwDA7nOjADv4THPATWgM7lgkAwD1RrfN5DAAAAAAAALAY7nJWPg==;::
+  {camera}0 0{cellsize}10{capture}35 35
+  [animation]{defaultspeed}0.05{fps}30{ticks}0 -> 170
+
+  [board]{level}::K3\::;1g;1g;1;eNrt1qEKAkEYhdHX0fYL2gbBIGgwCRrEMCuLLiyyMGLw6a1GnbTIOY/whcuNAAAAAMZs8lqf0pC7+yOlLulRE266WJbraqdJVby5dr+2E6Fq325R4jmLMHN1/Taxj4N+1f2KcN87p6HPlzY3fXtMnxW3Krp37p1797ftGhXcO/fOvQOAkXkDkX6fUA==;::
+  {camera}26 71{cellsize}40{capture}9 7
+  [animation]{defaultspeed}0.2{fps}30{cellposition}aliased{ticks}0 -> 24{camera}0 -> -24i
+  [board]{level}::K3\::;1g;1g;1;eNrtzS0KgEAUhdHtTHwLeNWfPZiMFhE0zeoHDGI1aJBzuNz6RXyg1O62/vXaeL7O486U27ysR+aepQ7XAgAAAAAAAAAA4FcaiuxizA==;::
+  {camera}1 1{cellsize}40{capture}7 7
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 8
+
+  [board]{level}::K3\::;d;8;1;eNozMMAH0pM1EtMNiAA6xCgEAJ9bFZo=;::
+  {camera}3 2{cellsize}60{capture}8 6
+  [animation]{defaultspeed}0.4{fps}30{mode}forces{ticks}0 -> 7 -0.8> 8
+  [board]{level}::K3\::;1g;d;1;eNozMMABNAyTsSKwlAmpyIBKgICrkkkj6eSq0bAaDavBHVYWGlkWo6GFEVoaSeWjaWs0Hw5sWAEAKSWHDA==;::
+  {camera}25 0{cellsize}12{capture}40 15
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 81{input}::..22222.112221222211222..1...............2442222222......22............1.........::
+  [board]{level}::K3\::;1g;d;1;eNozMBgFo2BwAw1DEziy0MiyGA2RUUAfAACbW/XX;::
+  {camera}77 5{cellsize}40{capture}9 5
+  [animation]{defaultspeed}0.6{fps}30{mode}forces{cellposition}aliased{ticks}0 -> 9 -> 10 -> 11{camera}0 -> 0 -> -1 -> 0
   
-[graphic]
-  {type} canvas
-  {size} 360 280
-  {position} 0.5 9.5
-  {align} board
-  {layer} 3
-  {color} #fff
+  [board]{level}::K3\::;1g;1g;1;eNrt0KENADAIAMF1kATFPh2g+7sugGuCupMvPxMAAAD29Bli1HUGAAAAAAD49wAMR1Q+;::
+  {camera}35 35{cellsize}40{capture}10 7
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 27
+  [board]{level}::K3\::;1g;1g;1;eNrt0aENACAMRNF1kA0zEZDs7+pq8BXkvQV+LhcBAMDjaGhoaGiU3TBjzNuwZHldQ0NDAwAAAAB+l1M1WgM=;::
+  {camera}40.05 35{cellsize}40{capture}5 7
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 1
+  [board]{level}::K3\::;1g;1g;1;eNrtzzENACAQBEE7Xx6YosR/h4PvCAmZMbDZBAAAABrrfqJGau4/XgAAAAAAgLcO5AlUyg==;::
+  {camera}40 35{cellsize}40{capture}5 7
+  [animation]{defaultspeed}0.4{fps}30{mode}forces{ticks}0 -> 7
+
+  [board]{level}::K3\::;1g;1g;1;eNrt0rENACAIRcF1LGlMpHcrl2cJG+VugZfAjwD6Sg0N4DtjHUfg1fXOrYK/WxcAAAAAAFxUofNW8Q==;::
+  {camera}24 23{cellsize}40{capture}11 7
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 22
+  [board]{level}::K3\::;1g;1g;1;eNrt0bENABAABMB1dCQaNlGbQmJ5YgeiuEv+2y8+JQAA3qg7IY/LK6HM0/HyTtvpTgUAAAAAAAC+swCeeVV6;::
+  {camera}25 24{cellsize}40{capture}9 5
+  [animation]{defaultspeed}0.4{fps}30{mode}forces{ticks}0 -> 27
+
+  [board]{level}::K3\::;1g;1g;1;eNrtmktPg0AAhH+L8YKPw9LSpBgujbaRg0lN015QE+orjU2rKdq/b/EFopQ3LOWb7GFYwsLuzCzstkKAeuHamD6uFsu1AasVQ2oY5oBhDlh55qjiYZAFFmVNxqdxTDEHlvFszxaOYZyLUVtMOsKIebYJmcAihINwEA4Y4SAcMMJBOGCEg3DACAfhgBEOwgEjHPy8ASMTZAImZxLG/W1JKOws2YFJ4X/78l8ecf2VqrysvAsf7ixVpDv8aOqVNMCkyECa8/xZqt5+D5sD0R3GDA/D63hd2t2brj7qiIkq/CtP/eT7/IGmn7UH7if2m1c12x/uxW5MkgUH8Sn7o9fse9zpJarPaF97bKlaZQbNOXuS9oOQNfG9cFgLb5KxXc6Y4swttWW1hNUmbiFXnt5UzwsLYdInIYwRYVTMp03xjX8mnm9rJfKEaXQXRc7vRVFIGz+D8reED2LC9ERekKPAfc27lS5Gmph0N53MXltj7wQTsD1uyy3F11Bl3HuS2+V0Or//nEgq4Ip97D/qXeR5j2JGTU5FU/QlvYWb6lzFXKU6SnzPyOHPUtBdBh5wiLyK77rQX/ucSF2Y1MH2SxMkMCe728YiY0Wseb1OgsdyRLL+ZtI125sTfXIbFfRBnyboo5g9d6dn6NvpOTpeU1tNbc2dlKrQ59L6DAAAAAAAAAAAAAAAAAAA2fEOqA2G3w==;::
+  {camera}0 0{cellsize}20{capture}24 13
+  [animation]{defaultspeed}0.2{samplerate}44100{channels}stereo{fps}30{ticks}0 -> 102{trackplayer}13-37 18-27
+  {input}::...111111151...111.4.1611....115111...511...511..4.1..2.11111511.44...15511111.511111111111111111.....::
+  [board]{level}::K3\::;k;2w;1;eNrt20tLw0AUxfFPUz2LGmauiRIoQqTpOopdjRD62FTBB32s+uGdGVLsSsGNm/+shpuTk18+wHUuH9Ujd37UjYPXnQXzOtzEqz0ES7FL+VaLefBxtFXdqx2pK1LgKQcWY5X3v5R0xzSu4l22H8r8bEjn8R9KkSFDhgwZMmTIkCFDhgwZMmTIkCFDhgwZMmTIkCFDhgwZMmTIkCFDhgwZMmTIkCFDhgwZMmTIkCFDhgwZMmTIkP2H7Nnrc3dqqpowWb1v3rYTLfvcazlZNirnF1dnoJR+7FVNT/uthdNmpZfWDV/M66+avurjNr7j98Guv3dhl4WLbXUTn6zb9HupuAxm7ufzBZn+w6U=;::
+  {camera}1 191{cellsize}40{capture}15 10
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 |> 1 -> 2 |0.5> 3 |> 4 -> 5 |0.5> 6 -> 17
+  {camera} 0 -> 0 -> -190i -> 0 -> 0 -> 190i -> 0 -> 0
+  [board]{level}::K3\::;1g;1g;1;eNrt0DENAAAIBDFLPyII/xpI8ABTa+CSS+BGvVTaaAAAAAAAAAAAYA3Q91Om;::
+  {camera}4 5{cellsize}40{capture}7 7
+  [animation]{defaultspeed}0.5{fps}30{ticks}0 -> 2 |> 3 |> 4 -> 6{camera}0 -> 0 -> 3 -> -3 -> 0
+
+  [board]{level}::K3\::;5,;7;1;eNozMBgFo2AUjIJRMCyBRlZgtKHpaDiMglEwCkbBKBgFQxkAAE1+kdM=;::
+  {camera}1 1{cellsize}40{capture}12 7
+  [animation]{defaultspeed}0.5{fps}30
+  {ticks}0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
+  {camera}0 -> 1 -> 2 -> 4 -> 8 -> 16 -> 32 -> 63 -> 120 -> 219
+
+  [board]{level}::K3\::;1g;1g;1;eNrt0aENwDAMRNF1giKDLFNcYBV1fxaVZAe774HjXxfBn61vcjxXm5LZ45gc+Z6s2iV3jw4AAAAAAAAAAMrYNAFWoA==;::
+  {camera}12 5{cellsize}40{capture}14 9
+  [animation]{defaultspeed}1{fps}30{ticks}0 |> 1 -> 8 |> 9
+  
+  [board]{level}::K3\::;1g;1g;1;eNrt17EKgzAUBdDf6ShdRMhSXP0Dp9BmixhE/9/3D2Jp4RwyvTGX+0K6DgDgdz36cU6tbK3sR67buqdnzF4xO2qN+ZLfNS+tfJK7Au4xfGPXTfbavyQ1SkqXJKVLuoQuSehal+KbG0cE+iQhb5MuAQAANzsBRN61Sw==;::
+  {camera}39 57{cellsize}40{capture}9 5
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 16
+  [board]{level}::K3\::;1g;1g;1;eNrt17EKgzAUBdDf6ShdRMhSXP0Dp9BmixhE/9/3D2Jp4RwyvTGX+0K6DgDgdz36cU6tbK3sR67buqdnzF4xO2qN+ZLfNS+tfJK7Au4xfGPXTfbavyQ1SkqXJKVLuoQuSehal+KbG0cE+iQhb5MuAQAANzsBRN61Sw==;::
+  {camera}18 21{cellsize}40{capture}9 5
+  [animation]{defaultspeed}0.2{fps}30{cellposition}aliased{ticks}0 -> 4{camera}0 -> 2
+
+  [board]{level}::K3\::;1g;1g;1;eNrt0zsOwyAURcHtUALGirfhgop1JOuPIjoqf4TkSDPFLV51mhcjAPyLLdS9pRQ+paXwqi3H8K6/w+2dUttz85ib7+yc0F66jKXLtZ3U2CPLGFnO7qy83reOfevx9eEAAAAAAAAAPMAXsUuy9g==;::
+  {camera}14 17{cellsize}40{capture}13 7
+  [animation]{defaultspeed}0.5{fps}30{ticks}0 -> 1
+  [board]{level}::K3\::;1g;1g;1;eNrt0jEKg0AQRuHrbLmzaBEYyA2CKaymCuyaLKiRjdHrB0yVMo2FvK98DPzNeA8AAAAAAID/uPZq4t1j3WNrqU1cPFkIpvdyW2IuWu2we2lM5zykPEzv/pXicx1VvqmkLfWpm7X+udqSuOZsEiwIrwIAAAAAAADgSD5WjHUG;::
+  {camera}31 42{cellsize}20{capture}30 10
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 24
+
+  [board]{level}::K3\::;1g;1g;1;eNrt1DEKg0AQBdDrWAQxnRYiFh5BYyUoeP8rKEhilW4nEXmPge3mMzvLFgUAFzHP4RFVt4RnlGXCVqfErb9a2uoWq+avsufjBxU7wjrtlf5/OI5x/MQ0XbbmUVO82v6dU+8Vd13D4NUDAAAAAADAPW322mV7;::
+  {camera}16 14{cellsize}40{capture}16 8
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 32
+  [board]{level}::K3\::;1g;1g;1;eNrt0zsKgDAQBcDrWImlFiIWHsFPJRjw/ldQELWyS0B0hoV0+0h2UxQAvMSyJI+oupA8oywjtrpFbv0otNUnRs2fZeu8V/y/fRzTdMU0XbbmqW4xtv2ZU++V7rmGwcoAAAAAAADAN22KMFox;::
+  {camera}16 24{cellsize}40{capture}16 8
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 28
+  [board]{level}::K3\::;1h;1h;3;eNrt0DERACAQA0FLKaFECvgXgYYv+KHYNXCTJGUzDURERERERERERERERERERERERL6NjLqGHWd13LV3AAAAAIDHLp5JfRk=;::
+  {camera}47 45{cellsize}20{capture}18 18
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 20
+  [board]{level}::K3\::;1h;1h;3;eNrt2qENwDAMBMB1Cl2WwIIuUFyS7D9EpG7gAKvgfoGTLaOXI9Lp73k8dxSkQyAQCAQCgUAgEAgEAoFAIH9F2leTtXQKhplXxc5GPnvN4qw4AAgEAoFAIBAIBAKBQCAQCKQK2X3AW4n1lTw=;::
+  {camera}34 34{cellsize}10{capture}35 35
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 20 -0> 200
+
+  [board]{level}::K3\::;1g;1g;1;eNrt1aENACAQA8B1MCQEDCuwACswA9sTPAJFEHeu7tOKTwne6yqArR5yGO31GaFMWwBw+TRyVAIAAAAAAAC/Ww2LVUM=;::
+  {camera}26 12{cellsize}40{capture}14 8
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 16
+  [board]{level}::K3\::;1g;1g;1;eNrt0TEBADAIwDA7O5kMjAz/DvYjgIfEQI9GAGucypHMuxOZMhQAAAAAAAAAgO4DPgRU2A==;::
+  {camera}5 9{cellsize}40{capture}12 6
+  [animation]{defaultspeed}1{fps}30{mode}forces{ticks}0 |> 1 -> 5
+  [board]{level}::K3\::;1g;1g;1;eNrt0CERACAQAME6Lx/ma5AARwL6KxwBUIhdefIygR/Ertmi1uw3DVcAAAAAAAAAAODFAbANVio=;::
+  {camera}7 8{cellsize}40{capture}14 5
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 16 -0> 256
+
+  [board]{level}::K3\::;2w;2w;1;eNrt1D0KwkAQgNHTKAMWbmIEAzYKYinWqYLaSAJBCXp8f8AjCBreq2bLj2E2JX7LKK77KsurZdc3TXe6tPWhqdvudFym6CfjuBdRbGM3rbLI6irPo138eXF0xSs4T1Fsolx95v0iTQawz3dRZP2zqXy+ZrchNJ0v5UDOLeZrfw4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAX/YAk9xlAA==;::
+  {camera}1 2{cellsize}10{capture}45 35
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 64
+
+  [board]{level}::K3\::;1g;1g;1;eNrt0rEJACAQA8B1LL90BRfxe0Fc3yn8Qu4WCCGJgPfa6vk8Y5+CIjkKQmbBJOmVAAAAAAAAAAD86gICTlaU;::
+  {camera}9 6{cellsize}40{capture}13 7
+  [animation]{defaultspeed}1{fps}30{mode}forces{ticks}0 |> 1 -> 10
+  [board]{level}::K3\::;1g;1g;1;eNrt0SEOgDAQRNHrVBbXK+BxeOpJCNfnAIR0kwXUe/KbEVMrfK/srd9TWeo6vT51nIGUn+lzIOVntkhK68PAg/bDhjcAAAAAAAAAADIuHv1a/g==;::
+  {camera}22 6{cellsize}40{capture}19 11
+  [animation]{defaultspeed}0.5{fps}30{ticks}0 -> 8
+
+  [board]{level}::K3\::;O;O;1;eNrt0kFrgzAUB/Dz8ikenhRkKLtsUC+V4rHiYEO6Hay+dimpkUzGYOy7LzGt3cuth52WPyj888uLCEkSHx+fP0/4UF8/0V4/5ePj4+Pzr3L/kobVKnxqN+lCyLYRIFWHCjL4YqDTyx51CQbRtNhsBQYxu5kLkWdNZuSyQLhyuSK8dnlNuHa5Jly4XBBeurwknLucEy5dLg1v960cBlQnPFdL71x8/CJbLe2l6GYw5TQx6MMvA6ZZODaj4p+z2EqIfbOdVMCzNIY0SaCToDebpQNdAuA7KHDMUYiQx3CIbrn+fAZ3ML5hP+0AeMSxPP/ptCu2d2JTuBBpgMBckeA1mqax75h962fxA+Rth7Q=;::
+  {camera}22 6{cellsize}40{capture}19 11
+  [animation]{defaultspeed}0.5{fps}30{ticks}0 -> 8
+
+  [board]{level}::K3\::;1g;1g;1;eNrt0iEOgDAMBdDrIHeA3mEagRhkbgkY7o8Fg2wCec81Ff+naSkA8FXTuWfELHGMtvW2jj7HfaqR0eA9/rnNvUYNPwgAAAAAAADA313QE3KK;::
+  {camera}32 16{cellsize}20{capture}10 9
+  [animation]{defaultspeed}0.5{fps}30{ticks}0 -> 4 |> 5 -> 10 |> 11 -> 29 |> 30
+
+  [board]{level}::K3\::;1g;1g;1;eNrtz6ENADAMA8GVvEJAQafp/qyoIyQquNNzy8mESlb3xnm1/9gBAAAAAAAAAADgNxebyVSM;::
+  {camera}1 1{cellsize}40{capture}11 5
+  [animation]{defaultspeed}0.5{fps}30{ticks}0 -> 2
+
+  [board]{level}::K3\::;1g;1g;1;eNrt0TENACAMBEA7jB1AACLQUP8OaqArCSR3yycdfvhGAHwsb5SOtZuYp73zyHfS3gAAAAAAAABAqwAI4ljv;::
+  {camera}15 12{cellsize}40{capture}15 8
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 5
+
+  [board]{level}::K3\::;O;O;1;eNrt0kFrgzAUB/Dz8ikenhRkKLtsUC+V4bHiYEO6HWx87VJSI1bGYOy7LzGt3ctxp8Lyhwj//PIUxSTx8fG5uoQPNdfrD2P+2/n4+Pj8o9y/pmH1GD7zdbqQijcS1NDiABl8MdDpVIe6BL1sODYbiUHMbuZC5EWTGblsEK5crgivXF4Rrl2uCRcuF4SXLi8J5y7nhEuXS8ObHVd9j8MJz9XSUciPX2SrpZ2S7QymnCZ6ffPLgGkWDs04iM9ZbCXEvtlWDSCyNIY0SaBVoA+brT3dAhBbKHDMUcpQxLCPboV+fAZ3ML5jN50AeMKxPL/pdCq2/8S6cCHSAIH5RYK3aJrGrmX2qtfiB9SVh7Q=;::
+  {camera}17 13{cellsize}20{capture}21 18
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 40 -0> 220 -> 250
+  [board]{level}::K3\::;O;O;1;eNrt0kFrgzAUB/Dz8ikenhRkKLtsUC+V4rHiYEO6Hay+dimpkUzGYOy7LzGt3cuth52WPyj888uLCEkSHx+fP0/4UF8/0V4/5ePj4+Pzr3L/kobVKnxqN+lCyLYRIFWHCjL4YqDTyx51CQbRtNhsBQYxu5kLkWdNZuSyQLhyuSK8dnlNuHa5Jly4XBBeurwknLucEy5dLg1v960cBlQnPFdL71x8/CJbLe2l6GYw5TQx6MMvA6ZZODaj4p+z2EqIfbOdVMCzNIY0SaCToDebpQNdAuA7KHDMUYiQx3CIbrn+fAZ3ML5hP+0AeMSxPP/ptCu2d2JTuBBpgMBckeA1mqax75h962fxA+Rth7Q=;::
+  {camera}20 11{cellsize}10{capture}28 24
+  [animation]{defaultspeed}0.2{fps}30{ticks}0 -> 40 -0> 420 -> 450
+
+
+
+  --K3::;k;2w;1;eNrtlbEOwjAMRH8GpAwMZoO56tgBZhZuLTsb345oQASSprZjmGypUpTYL+drlBCVIozX3XtIVtHTQOF8OG3DsaewX0/fa5/HENOo28TF7vZcGwqs6ly4rJJm4iZg1SMnlDJT4eleSe4nARz9IqVZ5iwRlT65frS5aakRTI1ge4blPJFGNPoInRM/8pHvGddHdbX4PObVEo1geQbmn7Enxszv+0dyIjHDtDzjMmKpm/+opEYvbe/d2oujegUVzMX66nsrI9h370QnOtGJTlTNeXgQ3QEZOybW;
+
+[board]
+  {level} ::K3\::;1g;c;1;eNozMBgFJAALGCM9PR1MBwYGAslsRzATSGgY5sAVB46G1ygYBVQGAGJF41U=;::
+  {camera} 1 1
+  {cellsize} 40
+  {capture} 11 7
+
+[animation]
+  {defaultspeed} 0.2
+  {mode} ticks
+  {cellposition} aliased
+  {fps} 30
+  {ticks}  0 -> 1 -> 22 -> 23 -> 24 -> 25 -> 26 -> 27 -> 28 -> 29 -> 36 -> 39    -> 45 -> 48   -> 53
+  {camera} 0 -> 1 -> 21 -> 0  -> 1  -> 0  -> 1  -> 0  -> 1  -> 0  -> 7  -> -1+2i -> 6  -> 7-2i -> 5
+[board]
+  {level} ::K3\::;1g;1g;1;eNrt0LENgCAQAMB1KF8qCpawoKIiMTFaUjg/e8jdCBcBAPxVekuv9xzf9cyaUzv7IQUAAAAAAACAjSxC71lS;::
+  {camera} 23 19
+  {cellsize} 40
+  {capture} 6 5
+
+[animation]
+  {defaultspeed} 0.2
+  {mode} ticks
+  {cellposition} aliased
+  {fps} 30
+  {ticks}  0 -> 1 -> 16
+  {camera} 0 -> 1 -> 15
+
+[board]
+  {level} ::K3\::;1g;1g;1;eNrt1zEKQCEIANDrNAYNXaC7tLR//u2DtvaEiPcGwUVBdDBnAOAefcURXD+uR9+yEVz/bI9Uvos3I5XfeQAAAEffjFYNAQAAAHjVBJf6Vu8=;::
+  {camera} 22 21
+  {cellsize} 40
+  {capture} 11 7
+
+[animation]
+  {defaultspeed} 0.2
+  {fps} 30
+  {cellposition} aliased
+  {ticks} 0 -> 1 -> 28 -> 33 -> 45
+  {camera} 0 -> 1 -> 27 -> 0 -> 12
+[board]
+  {level} ::K3\::;1g;1g;1;eNrt1KENADAMA8F1Ci11uKjbl2aBluSOGD5zAgBAsna1edk5nzrVcsDUUwMAAAAAAJjsArC5V9w=;::
+  {camera} 25 23
+  {cellsize} 40
+  {capture} 10 5
+
+[animation]
+  {defaultspeed} 0.4
+  {fps} 30
+  {mode} forces
+  {ticks} 0 >0.4> 5 -> 44
+  
+[board]
+  {level} ::K3\::;1g;1g;1;eNrt0yEOgDAMQNHrTFbNswSxA3AAFNz/BLMLIZhlgHhP1f20SSMeHTFdyjWdZX7njV00NDSutm5eAvjQ/Z/vDsOQ1QkAAAAAAACAv2l5QFdc;::
+  {camera} 16 9
+  {cellsize} 40
+  {capture} 11 7
+
+[animation]
+  {defaultspeed} 0.2
+  {fps} 30
+  {cellfilter} free
+  {ticks} 0 -> 1 -> 11 -> 19 -> 23 -> 29 -> 38
+  {camera} 0 -> 1 -> 10 -> 8i -> 0 -> 6i -> 9
+
+[script] !change
+  {initial} ::
+    local maker = GetCell(15, 15)
+    local label = CMWM:getObject("!cellname")
+    self.step = CMWM.stepper({
+      function()
+        maker.id = 527
+        label.text = "Cross Maker"
+      end,
+      function()
+        maker.id = 531
+        label.text = "Directional Cross Maker"
+      end,
+      -- ...
+    }, 0)
+  ::
+  {subtick:} 
+    {:index} first
+    {:callback} ::
+      if tick % 5 == 0 then
+        self.step:step()
+      end
+    ::
+
+[graphic] !cellname
+  {type} label
+  {text} ::Maker::
+  {position} 1 1
+  {size} 20 20
+  {align} camera
