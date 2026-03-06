@@ -7132,6 +7132,7 @@ function CreateMenu()
 			v.scale = v.scale or {1, 1}
 			v.rotation = v.rotation or 0
 			v.skew = v.skew or {0, 0}
+			v.origin = v.origin or {0, 0}
 			v.layer = v.layer or (depth - 1)
 			v.color = v.color or {1, 1, 1}
 			fail(type(v.position) ~= "table", "[graphic] "..id.." {position} must be a position")
@@ -7144,6 +7145,10 @@ function CreateMenu()
 			fail(type(v.skew) ~= "table", "[graphic] "..id.." {skew} must be a percentage (x, y) or nil")
 			fail(type(v.skew[1]) ~= "number", "[graphic] "..id.." {skew} X must be a number")
 			fail(type(v.skew[2]) ~= "number", "[graphic] "..id.." {skew} Y must be a number")
+			fail(v.type == "cell" and v.origin, "[graphic] "..id.." {origin} is not supported with {type} cell")
+			fail(type(v.origin) ~= "table" or #v.origin ~= 2
+				or not tostring(v.origin[1]):match("^%-?%d*%.?%d+%%?$")
+				or not tostring(v.origin[2]):match("^%-?%d*%.?%d+%%?$"), "[graphic] "..id.." {origin} must be two of pixel coordinate or percentage")
 			fail(v.align ~= "camera" and v.align ~= "board", "[graphic] "..id.." {align} must be 'camera' or 'world'")
 			fail(type(v.layer) ~= "number", "[graphic] "..id.." {layer} must be a number")
 			sceneanimation.layers[v.layer] = sceneanimation.layers[v.layer] or {}
@@ -7172,6 +7177,7 @@ function CreateMenu()
 				fail(v.size[2] < 0, "[graphic] "..id.." {size} Y must be greater than 0")
 				fail(v.size[1] > limits.texturesize, "[graphic] "..id.." too large (max "..limits.texturesize..")")
 				fail(v.size[1] > limits.texturesize, "[graphic] "..id.." too large (max "..limits.texturesize..")")
+				v.canvas = love.graphics.newCanvas(v.size[1], v.size[2])
 			else fail(true, "[graphic] "..id.." {type} unknown type "..tostring(v.type)) end
 		end
 		if not continue then return end
@@ -19886,10 +19892,10 @@ function GetDrawBounds(off, bg)
 end
 
 local fonts = {
-	nokia = font,
-	serifbold = serifbold,
-	serif = serif,
-	lmr = lmr
+	nokia = love.graphics.newText(font),
+	serifbold = love.graphics.newText(serifbold),
+	serif = love.graphics.newText(serif),
+	lmr = love.graphics.newText(lmr)
 }
 function DrawGraphic(graphic)
 	local cx, cy = math.floor(graphic.position[1]*cam.zoom-cam.x+cam.zoom*.5),math.floor(graphic.position[2]*cam.zoom-cam.y+cam.zoom*.5)
@@ -19902,18 +19908,26 @@ function DrawGraphic(graphic)
 	love.graphics.setColor(graphic.color)
 	if graphic.type == "label" then
 		local prevfont = love.graphics.getFont()
-		love.graphics.setFont(fonts[graphic.font])
-		love.graphics.print(graphic.text, cx, cy, graphic.rotation, sx, sy, graphic.skew[1], graphic.skew[2])
-		love.graphics.setFont(prevfont)
+		local font = fonts[graphic.font]
+		font:set(graphic.text)
+		local ox = type(graphic.origin[1]) == "string" and font:getWidth()*graphic.origin[1]:sub(1, -2) or graphic.origin[1]
+		local oy = type(graphic.origin[2]) == "string" and font:getHeight()*graphic.origin[2]:sub(1, -2) or graphic.origin[2]
+		love.graphics.draw(font, cx, cy, graphic.rotation, sx, sy, ox, oy, graphic.skew[1], graphic.skew[2])
 	elseif graphic.type == "texture" then
-		love.graphics.draw(GetTex(graphic.file), cx, cy, graphic.rotation, sx, sy, graphic.skew[1], graphic.skew[2])
+		local file = GetTex(graphic.file)
+		local ox = type(graphic.origin[1]) == "string" and file:getWidth()*graphic.origin[1]:sub(1, -2) or graphic.origin[1]
+		local oy = type(graphic.origin[2]) == "string" and file:getHeight()*graphic.origin[2]:sub(1, -2) or graphic.origin[2]
+		love.graphics.draw(file, cx, cy, graphic.rotation, sx, sy, ox, oy, graphic.skew[1], graphic.skew[2])
 	elseif graphic.type == "canvas" then
-		love.graphics.draw(graphic.canvas, cx, cy, graphic.rotation, sx, sy, graphic.skew[1], graphic.skew[2])
+		local div = graphic.align == "board" and 1/20 or 1
+		local ox = type(graphic.origin[1]) == "string" and graphic.canvas:getWidth()*graphic.origin[1]:sub(1, -2) or graphic.origin[1]
+		local oy = type(graphic.origin[2]) == "string" and graphic.canvas:getHeight()*graphic.origin[2]:sub(1, -2) or graphic.origin[2]
+		love.graphics.draw(graphic.canvas, cx, cy, graphic.rotation, sx*div, sy*div, ox, oy, graphic.skew[1], graphic.skew[2])
 	elseif graphic.type == "cell" then
 		local cell = getempty()
 		cell.id = graphic.id
 		cell.vars = graphic.vars or {}
-		cell.rot = graphic.rotation
+		cell.rot = graphic.rotation/90
 		if graphic.align == "board" then
 			DrawCell(cell, graphic.position[1], graphic.position[2], false, graphic.color[4], graphic.scale[1])
 		else
