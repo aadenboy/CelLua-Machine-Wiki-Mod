@@ -131,7 +131,7 @@ function CMWM.stepper(callbacks, loops)
 	assert(type(loops) == "number", "argument #2 of CMWM.stepper must be a number")
 	local stepper = {
 		callbacks = callbacks,
-		current = current,
+		current = 1,
 		loops = loops
 	}
 	function stepper.step(self)
@@ -145,6 +145,7 @@ function CMWM.stepper(callbacks, loops)
 			end
 		end
 	end
+	return stepper
 end
 
 local function packInt16LE(value)
@@ -7103,6 +7104,7 @@ function CreateMenu()
 			id = id or i
 			local pre = "local arg={...}local self=arg[1]\n"
 			v.initialcallback = v.initial and load(pre..v.initial)
+			v.update = {}
 			fail(v.initial and not v.initialcallback, "[script] "..id.." {initial} failed to parse")
 			for _,c in ipairs{"beforeTick", "afterTick", "animationStep", "end"} do
 				v.update[c.."callback"] = v.update[c] and load(pre..v.update[c])
@@ -7113,8 +7115,8 @@ function CreateMenu()
 				fail(type(v.subtick.index) ~= "string" and type(v.subtick.index) ~= "number", "[script] "..id.." {subtick:index} must be a valid index")
 				fail(type(v.subtick.index) == "string" and v.subtick.index ~= "first" and v.subtick.index ~= "last", "[script] "..id.." {subtick:index} must be a valid index")
 				fail(type(v.subtick.index) == "number" and (v.subtick.index < 0 or v.subtick.index > #subticks), "[script] "..id.." {subtick:index} must be a valid index")
-				v.subtick.callbackcallback = load(v.subtick.callback)
-				fail(not v.subtick.callback, "[script] "..id.." {subtick:callback} failed to parse")
+				v.subtick.callbackcallback = load(pre..v.subtick.callback)
+				fail(not v.subtick.callbackcallback, "[script] "..id.." {subtick:callback} failed to parse")
 				scriptsubticks[v.subtick.index] = scriptsubticks[v.subtick.index] or {}
 				table.insert(scriptsubticks[v.subtick.index], v)
 			end
@@ -18245,6 +18247,12 @@ end
 	daws f
 ]]
 
+function SubtickScripts(i)
+	for i,v in ipairs(recording and recorddata.scriptsubticks[i] or {}) do
+		ExecuteScript(v.subtick.callbackcallback, v)
+	end
+end
+
 function DoTick(first)
 	if winscreen then return end
 	if not v and draggedcell then
@@ -18281,9 +18289,12 @@ function DoTick(first)
 		subtick = 0
 		tickcount = tickcount + 1
 		ResetCells(first)
+		SubtickScripts("first")
 		for i=subtick%#subticks+1,#subticks do
 			subticks[i]()()
+			SubtickScripts(i)
 		end
+		SubtickScripts("last")
 		if cataloging then
 			local catalog, minx, maxx, miny, maxy, uniques, catcells = Catalog()
 			local fail = false
@@ -18348,12 +18359,20 @@ function DoTick(first)
 		subtickco = nil
 		currentsst = nil
 		forcespread = {}
-		if subtick == 0 then tickcount = tickcount + 1 end
+		if subtick == 0 then
+			SubtickScripts("first")
+			tickcount = tickcount + 1 
+		end
 		ResetCells(first)
 		repeat
 			subtick = subtick%#subticks+1
-		until subticks[subtick]()() or subtick == #subticks
-		if subtick == #subticks then subtick = 0 end
+			local result = subticks[subtick]()()
+			SubtickScripts(subtick)
+		until result or subtick == #subticks
+		if subtick == #subticks then
+			subtick = 0
+			SubtickScripts("last")
+		end
 	else
 		if not subtickco or coroutine.status(subtickcothread) == "dead" then
 			if subtick == 0 then tickcount = tickcount + 1 end
@@ -18374,6 +18393,10 @@ function DoTick(first)
 		if subtickco then
 			ResetCells(first)
 			subtickco(true)
+			if coroutine.status(subtickcothread) == "dead" then
+				SubtickScripts(subtick)
+				subtickco = nil
+			end
 		end
 		::out::
 		if subtick == #subticks then subtick = 0; subtickco = nil end
@@ -18385,8 +18408,8 @@ function DoTick(first)
 	actionpressed = nil
 	isinitial = false
 	local sd = level and .2 or delay
-	dtime = (recording and tpu > 0) and math.min(math.max(0, dtime - sd), sd) or 0
-	recorddata.debug = dtime..", "..sd..", "..(dtime - sd)
+	dtime = (recording and pretpu ~= 0) and math.min(math.max(0, dtime - sd), sd) or 0
+	recorddata.debug = "dtime: "..dtime.."\nsd: "..sd.."\ndiff: "..(dtime - sd)
 	itime = 0
 end
 
@@ -18715,6 +18738,7 @@ function love.update(dt)
 							end
 							goto notick
 						end
+						pretpu = tpu
 						local usetpu = 1
 						local prevdelay = delay
 						if mode == "-" then
@@ -18758,7 +18782,7 @@ function love.update(dt)
 									easing = nil
 								end
 							end
-							anim.camtween = tween.new(anim.lerptotal, {0}, {1}, easing or "linear")
+							anim.camtween = anim.lerptotal ~= 0 and tween.new(anim.lerptotal, {0}, {1}, easing or "linear") or tween.new(1, {1}, {1}, "linear")
 							if not anim.trackplayer and anim.tocam then
 								cam.x = (anim.fromcam.x or cam.x) + (anim.tocam.x or 0)
 								cam.y = (anim.fromcam.y or cam.y) + (anim.tocam.y or 0)
@@ -19765,6 +19789,7 @@ function DrawCell(cell,x,y,interpolate,alpha,scale,meta)
 	local cx,cy,crot
 	local lerp = itime/delay
 	interpolate = interpolate
+	if tpu == 0 then interpolate = false end
 	if not forcespread[cell.vars.forceinterp] then cell.vars.forceinterp = nil end
 	if cell.vars.forceinterp then
 		local force = forcespread[cell.vars.forceinterp]
